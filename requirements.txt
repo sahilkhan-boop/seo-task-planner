@@ -11,6 +11,12 @@ google-auth
 python-dotenv
 httpx
 anthropic
+# Signs the login session cookie (starlette.middleware.sessions.SessionMiddleware,
+# see app/main.py) -- an indirect Starlette dependency it doesn't declare itself,
+# so it has to be listed explicitly here or a fresh `pip install -r requirements.txt`
+# (e.g. Render's build) won't actually have it, and every login-gated route 500s
+# the moment it touches request.session.
+itsdangerous
 # Postgres driver -- only actually used when DATABASE_URL points at a postgres://
 # DSN (see app/db.py and render.yaml); local dev keeps using SQLite (stdlib
 # sqlite3, no driver needed) unless DATABASE_URL is set.
