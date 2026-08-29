@@ -83,8 +83,14 @@ def oauth_callback(
     token_data = exchange_code_for_tokens(code)
     expires_at = dt.datetime.utcnow() + dt.timedelta(seconds=token_data.get("expires_in", 3600))
 
+    # Saved as the SHARED, desktop-wide connection (site_id=None) regardless of which
+    # site's Connect button triggered this -- not a per-site row. That's the whole
+    # point: connecting once (from whichever site happens to be first) means every
+    # other project reuses it automatically, never going through Google's consent
+    # screen -- and whatever internal verification/approval it needs -- again. See
+    # Connection's own docstring and services.find_connection for the full reasoning.
     existing = db.scalars(
-        select(Connection).where(Connection.site_id == site_id, Connection.provider == provider)
+        select(Connection).where(Connection.site_id.is_(None), Connection.provider == provider)
     ).first()
     if existing:
         existing.access_token = token_data["access_token"]
@@ -95,7 +101,7 @@ def oauth_callback(
     else:
         db.add(
             Connection(
-                site_id=site_id,
+                site_id=None,
                 provider=provider,
                 access_token=token_data["access_token"],
                 refresh_token=token_data.get("refresh_token", ""),

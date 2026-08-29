@@ -649,6 +649,22 @@ class NoConnectionError(Exception):
     """Raised when a GSC/GA4 sync is requested but that provider isn't connected yet."""
 
 
+def find_connection(db: Session, site_id: int, provider: str) -> Connection | None:
+    """The Google OAuth connection to actually use for this site/provider -- a real
+    site-specific one if this site has its own (the rare client whose data needs a
+    different Google account than the rest), falling back to the one shared,
+    desktop-wide connection (Connection.site_id is None) every other site uses.
+    Connecting via Google from ANY one site's Connect page establishes that shared
+    connection for every other site too (see google_auth.py's oauth_callback), so
+    adding a 5th/6th/... client project never means going through Google's consent
+    screen -- and whatever internal verification/approval it needs -- again."""
+    return db.scalars(
+        select(Connection).where(Connection.site_id == site_id, Connection.provider == provider)
+    ).first() or db.scalars(
+        select(Connection).where(Connection.site_id.is_(None), Connection.provider == provider)
+    ).first()
+
+
 def _compile_filter(pattern: str | None) -> re.Pattern | None:
     """Invalid regex is ignored (falls back to "no filter") rather than erroring the
     whole sync -- a typo in an optional customization field shouldn't block real data
@@ -721,9 +737,7 @@ def sync_gsc_and_generate_tasks(db: Session, site_id: int) -> dict:
     starting now.
     """
     site = db.get(Site, site_id)
-    connection = db.scalars(
-        select(Connection).where(Connection.site_id == site_id, Connection.provider == "gsc")
-    ).first()
+    connection = find_connection(db, site_id, "gsc")
     if not connection:
         raise NoConnectionError(f"Site {site_id} has no GSC connection yet")
     if not site.gsc_site_url:
@@ -817,9 +831,7 @@ def sync_ga4_and_generate_tasks(db: Session, site_id: int) -> dict:
     current behavioral state, not a one-time backlog anchored to campaign start.
     """
     site = db.get(Site, site_id)
-    connection = db.scalars(
-        select(Connection).where(Connection.site_id == site_id, Connection.provider == "ga4")
-    ).first()
+    connection = find_connection(db, site_id, "ga4")
     if not connection:
         raise NoConnectionError(f"Site {site_id} has no GA4 connection yet")
     if not site.ga4_property_id:

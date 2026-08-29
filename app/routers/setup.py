@@ -18,6 +18,7 @@ from app.google_oauth import build_auth_url, get_valid_access_token
 from app.ingestion.ga4_sync import fetch_ga4_properties
 from app.ingestion.gsc_sync import fetch_gsc_properties
 from app.models import Campaign, Connection, CrawlImport, Site
+from app.services import find_connection
 from app.templating import templates
 
 router = APIRouter()
@@ -29,12 +30,8 @@ def connect_step(site_id: int, request: Request, db: Session = Depends(get_db), 
     has_crawl_data = (
         db.scalars(select(CrawlImport).where(CrawlImport.site_id == site_id)).first() is not None
     )
-    gsc_connection = db.scalars(
-        select(Connection).where(Connection.site_id == site_id, Connection.provider == "gsc")
-    ).first()
-    ga4_connection = db.scalars(
-        select(Connection).where(Connection.site_id == site_id, Connection.provider == "ga4")
-    ).first()
+    gsc_connection = find_connection(db, site_id, "gsc")
+    ga4_connection = find_connection(db, site_id, "ga4")
     return templates.TemplateResponse(
         request,
         "setup_connect.html",
@@ -62,9 +59,7 @@ def select_property_page(site_id: int, request: Request, provider: str, db: Sess
     a manual text field (same as before) if the API call itself fails for any
     reason (permission issue, network blip, etc.) -- never a dead end."""
     site = db.get(Site, site_id)
-    connection = db.scalars(
-        select(Connection).where(Connection.site_id == site_id, Connection.provider == provider)
-    ).first()
+    connection = find_connection(db, site_id, provider)
     properties: list[dict] = []
     fetch_error = None
     if not connection:
@@ -269,12 +264,8 @@ def settings_index(site_id: int, request: Request, db: Session = Depends(get_db)
     campaign = db.scalars(
         select(Campaign).where(Campaign.site_id == site_id).order_by(Campaign.start_date.desc())
     ).first()
-    gsc_connection = db.scalars(
-        select(Connection).where(Connection.site_id == site_id, Connection.provider == "gsc")
-    ).first()
-    ga4_connection = db.scalars(
-        select(Connection).where(Connection.site_id == site_id, Connection.provider == "ga4")
-    ).first()
+    gsc_connection = find_connection(db, site_id, "gsc")
+    ga4_connection = find_connection(db, site_id, "ga4")
     return templates.TemplateResponse(
         request,
         "settings.html",

@@ -100,12 +100,22 @@ class Campaign(Base):
 
 
 class Connection(Base):
-    """Google OAuth connection for GSC/GA4 sync (phase 3-4)."""
+    """Google OAuth connection for GSC/GA4 sync (phase 3-4).
+
+    site_id is nullable -- None means this is the one shared, desktop-wide
+    connection for that provider, reused across every site rather than requiring
+    a fresh trip through Google's consent screen (and whatever internal
+    verification/approval that needs) for every new client project. A real
+    per-site row (site_id set) still wins over the shared one when both exist,
+    for the rare client whose data genuinely needs a different Google account --
+    see services.find_connection for the actual lookup order, and
+    routers/google_auth.py's oauth_callback for where new connections default to
+    being saved as the shared one."""
 
     __tablename__ = "connections"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    site_id: Mapped[int] = mapped_column(ForeignKey("sites.id"))
+    site_id: Mapped[int | None] = mapped_column(ForeignKey("sites.id"), nullable=True)
     provider: Mapped[str] = mapped_column(String)  # "gsc" | "ga4"
     access_token: Mapped[str] = mapped_column(String)
     refresh_token: Mapped[str] = mapped_column(String)

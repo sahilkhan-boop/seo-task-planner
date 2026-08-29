@@ -71,11 +71,19 @@
           </select>
         </label>
       </div>
-      {% if google_oauth_configured %}
+      {% if gsc_connected %}
+        <p class="muted" style="margin-top: 10px; font-size: 0.85rem;">
+          Already connected via the shared Google account used across every project -- no need to sign in again.
+        </p>
+        <p>
+          <a class="button secondary" href="/sites/{{ site.id }}/setup/connect/select-property?provider=gsc">Select property from connected account →</a>
+          {% if google_oauth_configured %}
+            <button type="submit" class="secondary" formaction="/sites/{{ site.id }}/setup/connect/gsc-oauth" style="margin-left: 8px;">Reconnect via Google →</button>
+          {% endif %}
+        </p>
+      {% elif google_oauth_configured %}
         <p style="margin-top: 10px;">
-          <button type="submit" class="secondary" formaction="/sites/{{ site.id }}/setup/connect/gsc-oauth">
-            {{ "Reconnect" if gsc_connected else "Connect" }} via Google →
-          </button>
+          <button type="submit" class="secondary" formaction="/sites/{{ site.id }}/setup/connect/gsc-oauth">Connect via Google →</button>
         </p>
       {% else %}
         <p class="muted" style="margin-top: 10px;">
@@ -115,11 +123,19 @@
           </select>
         </label>
       </div>
-      {% if google_oauth_configured %}
+      {% if ga4_connected %}
+        <p class="muted" style="margin-top: 10px; font-size: 0.85rem;">
+          Already connected via the shared Google account used across every project -- no need to sign in again.
+        </p>
+        <p>
+          <a class="button secondary" href="/sites/{{ site.id }}/setup/connect/select-property?provider=ga4">Select property from connected account →</a>
+          {% if google_oauth_configured %}
+            <button type="submit" class="secondary" formaction="/sites/{{ site.id }}/setup/connect/ga4-oauth" style="margin-left: 8px;">Reconnect via Google →</button>
+          {% endif %}
+        </p>
+      {% elif google_oauth_configured %}
         <p style="margin-top: 10px;">
-          <button type="submit" class="secondary" formaction="/sites/{{ site.id }}/setup/connect/ga4-oauth">
-            {{ "Reconnect" if ga4_connected else "Connect" }} via Google →
-          </button>
+          <button type="submit" class="secondary" formaction="/sites/{{ site.id }}/setup/connect/ga4-oauth">Connect via Google →</button>
         </p>
       {% else %}
         <p class="muted" style="margin-top: 10px;">
