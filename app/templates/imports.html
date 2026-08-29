@@ -24,14 +24,19 @@
 
   <section class="card">
     <h2>Import a crawl folder</h2>
-    <form method="post" action="/sites/{{ site.id }}/imports" class="form-grid">
+    <p class="muted" style="margin-top: -6px;">
+      Any file with a recognizable column layout is picked up, not just Screaming Frog's own
+      exports (by column signature, not filename or source tool -- name your files however's
+      clearest to you). You'll see exactly what got understood before anything's generated.
+    </p>
+    <form method="post" action="/sites/{{ site.id }}/imports/preview" class="form-grid">
       <label>Folder (relative to <code>{{ imports_root }}/</code>)
         <input type="text" name="folder" placeholder="{{ site.domain }}/2026-08-15" required />
       </label>
       <label>Crawl date
         <input type="date" name="crawl_date" required />
       </label>
-      <button type="submit">Import & generate tasks</button>
+      <button type="submit">Preview folder →</button>
     </form>
   </section>
 

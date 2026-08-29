@@ -1,6 +1,6 @@
 import os
 
-from app.ingestion.screaming_frog import _hostname, classify_site_scale, import_crawl_folder
+from app.ingestion.screaming_frog import _hostname, classify_site_scale, import_crawl_folder, preview_crawl_folder
 
 FIXTURES = os.path.join(os.path.dirname(__file__), "fixtures")
 
@@ -206,3 +206,73 @@ def test_unrecognized_csv_is_silently_skipped(tmp_path):
     (tmp_path / "some_other_report.csv").write_text("Widget,Count\nfoo,1\n")
     result = import_crawl_folder(str(tmp_path))  # must not raise
     assert result.total_urls == 1
+
+
+# ---------- response_codes classification aliases ("URL"/"HTTP Status Code" etc,
+# not just Screaming Frog's own "Address"/"Status Code") ----------
+
+
+def test_response_codes_recognizes_url_and_http_status_code_headers(tmp_path):
+    """Not Screaming Frog's own column names, but the same shape -- parse_response_codes
+    already treated "url" as an alias for "address" (see its own _col candidate list);
+    classification used to be stricter than parsing, so a file shaped exactly like this
+    just silently fell through as unrecognized until now."""
+    (tmp_path / "crawl_export.csv").write_text("URL,HTTP Status Code\nhttps://example.com/a,404\n")
+    result = import_crawl_folder(str(tmp_path))
+    assert result.total_urls == 1
+    assert result.issues[0].url == "https://example.com/a"
+    assert result.issues[0].issue_type == "404"
+
+
+def test_response_codes_recognizes_response_code_alias(tmp_path):
+    (tmp_path / "crawl_export.csv").write_text("Address,Response Code\nhttps://example.com/a,500\n")
+    result = import_crawl_folder(str(tmp_path))
+    assert result.issues[0].issue_type == "5xx"
+
+
+def test_all_inlinks_still_wins_over_the_broadened_response_codes_aliases(tmp_path):
+    """Regression: a real All Inlinks export also has a Status Code column (see the
+    module docstring) -- broadening response_codes' aliases must not break the existing
+    "All Inlinks is checked first" priority that already handles this ambiguity."""
+    (tmp_path / "response_codes.csv").write_text("Address,Status Code\nhttps://example.com/a,200\n")
+    (tmp_path / "all_inlinks.csv").write_text(
+        "Source,Destination,Status Code\nhttps://example.com/x,https://example.com/a,200\n"
+    )
+    preview = preview_crawl_folder(str(tmp_path))
+    kinds = {f.filename: f.kind for f in preview.files}
+    assert kinds["all_inlinks.csv"] == "all_inlinks"
+    assert kinds["response_codes.csv"] == "response_codes"
+
+
+# ---------- preview_crawl_folder (see app/routers/imports.py's preview-then-confirm flow) ----------
+
+
+def test_preview_reports_each_files_detected_kind_and_row_count(tmp_path):
+    (tmp_path / "response_codes.csv").write_text(
+        "Address,Status Code\nhttps://example.com/a,200\nhttps://example.com/b,404\n"
+    )
+    preview = preview_crawl_folder(str(tmp_path))
+    [f] = preview.files
+    assert f.filename == "response_codes.csv"
+    assert f.kind == "response_codes"
+    assert f.kind_label == "Response Codes"
+    assert f.row_count == 2
+    assert f.columns == ["Address", "Status Code"]
+
+
+def test_preview_flags_unrecognized_files_instead_of_hiding_them(tmp_path):
+    (tmp_path / "response_codes.csv").write_text("Address,Status Code\nhttps://example.com/a,200\n")
+    (tmp_path / "mystery_export.csv").write_text("Widget,Count\nfoo,1\nbar,2\n")
+    preview = preview_crawl_folder(str(tmp_path))
+    mystery = next(f for f in preview.files if f.filename == "mystery_export.csv")
+    assert mystery.kind is None
+    assert mystery.kind_label == "Not recognized"
+    assert mystery.row_count == 2
+    assert preview.unrecognized_count == 1
+    assert preview.has_response_codes is True
+
+
+def test_preview_has_response_codes_false_when_the_required_file_is_missing(tmp_path):
+    (tmp_path / "all_inlinks.csv").write_text("Source,Destination\nhttps://a.com,https://b.com\n")
+    preview = preview_crawl_folder(str(tmp_path))
+    assert preview.has_response_codes is False

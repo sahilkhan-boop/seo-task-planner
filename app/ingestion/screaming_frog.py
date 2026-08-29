@@ -69,6 +69,30 @@ class CrawlResult:
     indexation_blocking: dict[str, list[str]]  # {reason: [urls]}, e.g. {"noindex": [...]}
 
 
+_KIND_LABELS = {
+    "response_codes": "Response Codes",
+    "all_inlinks": "All Inlinks",
+    "redirect_chains": "Redirect Chains",
+    "gsc_coverage": "GSC Index Coverage",
+}
+
+
+@dataclass
+class FilePreview:
+    filename: str
+    kind: str | None  # one of _KIND_LABELS' keys, or None if not recognized
+    kind_label: str  # human-readable, "Not recognized" if kind is None
+    row_count: int
+    columns: list[str]  # original header, as written in the file (not lowercased)
+
+
+@dataclass
+class ImportPreview:
+    files: list[FilePreview]
+    has_response_codes: bool  # the one file import_crawl_folder actually requires
+    unrecognized_count: int
+
+
 def classify_site_scale(total_urls: int) -> str:
     if total_urls < SITE_SCALE_SMALL_MAX:
         return "small"
@@ -100,7 +124,16 @@ ALL_INLINKS_COLUMNS = {"source", "destination"}
 # "final address"/"chain type" are unique to Redirect Chains -- a plain Response Codes
 # export never has them, even though both share an "address" column.
 REDIRECT_CHAINS_COLUMNS = {"final address", "chain type"}
-RESPONSE_CODES_COLUMNS = {"address", "status code"}
+# "url" is accepted alongside "address" since parse_response_codes already treats them as
+# equivalent (see its own _col candidate list) -- classification used to be stricter than
+# parsing, which just meant a file shaped exactly like this but headed "URL" instead of
+# "Address" silently fell through as unrecognized. "http status code"/"response code" are
+# the same generalization applied to the status column. Deliberately NOT adding "source" as
+# an address alias here even though parse_response_codes accepts it -- that would collide
+# with All Inlinks' own real Source/Destination + Status Code shape (see the docstring on
+# _classify_csv below for why order alone isn't enough to save that).
+RESPONSE_CODES_ADDRESS_ALIASES = {"address", "url"}
+RESPONSE_CODES_STATUS_ALIASES = {"status code", "http status code", "response code"}
 # Search Console's own "Page indexing" (Index Coverage) report, exported per status
 # bucket from the GSC UI (Index > Pages > click a bucket > Export) -- each file is just
 # {URL, Last crawled}, with the bucket's REASON coming from the filename itself (GSC
@@ -117,7 +150,11 @@ def _classify_csv(path: str) -> str | None:
         return "all_inlinks"
     if REDIRECT_CHAINS_COLUMNS & columns:
         return "redirect_chains"
-    if RESPONSE_CODES_COLUMNS <= columns:
+    # Checked last, after the two shapes above -- a real All Inlinks export also has a
+    # "Status Code" column, so a naive "has an address-ish + status-ish column" check
+    # would misclassify it as Response Codes if it were checked first. Source/
+    # Destination is what's actually unique to All Inlinks.
+    if (columns & RESPONSE_CODES_ADDRESS_ALIASES) and (columns & RESPONSE_CODES_STATUS_ALIASES):
         return "response_codes"
     if GSC_COVERAGE_COLUMNS <= columns:
         return "gsc_coverage"
@@ -174,7 +211,11 @@ def parse_response_codes(path: str) -> dict[str, ResponseCodeRow]:
     with open(path, newline="", encoding="utf-8-sig") as f:
         for row in csv.DictReader(f):
             url = _col(row, "address", "url", "source")
-            code_raw = _col(row, "status code", "statuscode")
+            # Keep in sync with RESPONSE_CODES_STATUS_ALIASES above -- _classify_csv
+            # recognizes a file by these same header names, so parsing needs to
+            # actually extract the value under whichever one it matched on, not just
+            # Screaming Frog's own "Status Code"/"StatusCode".
+            code_raw = _col(row, "status code", "statuscode", "http status code", "response code")
             if not url or not code_raw:
                 continue
             try:
@@ -350,4 +391,39 @@ def import_crawl_folder(folder: str, site_domain: str | None = None) -> CrawlRes
         total_urls=total_urls,
         site_scale=classify_site_scale(total_urls),
         indexation_blocking=dict(indexation_blocking),
+    )
+
+
+def preview_crawl_folder(folder: str) -> ImportPreview:
+    """What import_crawl_folder WOULD do with this folder, without actually doing it --
+    every .csv's real detected type, row count, and original header, so the analyst can
+    see and confirm what got understood before any task gets generated from it (see
+    app/routers/imports.py's preview-then-confirm flow). A file _classify_csv can't match
+    any known shape for is listed with kind=None rather than silently vanishing the way
+    import_crawl_folder itself skips it -- "understood nothing" should be visible, not
+    quietly true.
+    """
+    files: list[FilePreview] = []
+    for name in sorted(os.listdir(folder)):
+        if not name.lower().endswith(".csv"):
+            continue
+        path = os.path.join(folder, name)
+        kind = _classify_csv(path)
+        with open(path, newline="", encoding="utf-8-sig") as f:
+            reader = csv.reader(f)
+            header = next(reader, [])
+            row_count = sum(1 for _ in reader)
+        files.append(
+            FilePreview(
+                filename=name,
+                kind=kind,
+                kind_label=_KIND_LABELS.get(kind, "Not recognized"),
+                row_count=row_count,
+                columns=header,
+            )
+        )
+    return ImportPreview(
+        files=files,
+        has_response_codes=any(f.kind == "response_codes" for f in files),
+        unrecognized_count=sum(1 for f in files if f.kind is None),
     )

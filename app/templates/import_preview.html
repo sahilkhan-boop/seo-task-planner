@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}{{ site.domain }} — Preview Import{% endblock %}
+{% block content %}
+  <p><a href="/sites/{{ site.id }}/imports">← Back to Crawl Imports</a></p>
+  <h1>Preview: {{ folder }}</h1>
+  <p class="muted">
+    What each file in this folder was understood as, before anything gets generated from it --
+    review, then confirm below.
+  </p>
+
+  {% if not preview.has_response_codes %}
+    <p class="error">
+      No Response Codes-shaped file found (needs an address/URL column plus a status-code
+      column) -- this is the one file required to generate any tasks at all. Nothing below
+      can be imported until one's in this folder.
+    </p>
+  {% endif %}
+
+  {% if preview.unrecognized_count %}
+    <p class="muted">
+      {{ preview.unrecognized_count }} file(s) below weren't recognized -- if one of them is a
+      real crawl/GSC export just under an unfamiliar column layout, share it and it can be
+      taught to this platform's importer.
+    </p>
+  {% endif %}
+
+  <table class="table">
+    <thead><tr><th>File</th><th>Detected as</th><th>Rows</th><th>Columns found</th></tr></thead>
+    <tbody>
+      {% for f in preview.files %}
+      <tr class="{{ '' if f.kind else 'severity-row-medium' }}">
+        <td>{{ f.filename }}</td>
+        <td>
+          {% if f.kind %}
+            <span class="badge severity-low">{{ f.kind_label }}</span>
+          {% else %}
+            <span class="badge severity-medium">{{ f.kind_label }}</span>
+          {% endif %}
+        </td>
+        <td>{{ "{:,}".format(f.row_count) }}</td>
+        <td class="muted" style="font-size: 0.85rem;">{{ f.columns | join(", ") }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {% if preview.has_response_codes %}
+    <form method="post" action="/sites/{{ site.id }}/imports" style="margin-top: 18px;">
+      <input type="hidden" name="folder" value="{{ folder }}" />
+      <input type="hidden" name="crawl_date" value="{{ crawl_date }}" />
+      <button type="submit">Confirm & generate tasks →</button>
+    </form>
+  {% endif %}
+{% endblock %}

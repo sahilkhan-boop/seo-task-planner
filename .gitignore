@@ -15,3 +15,4 @@ dist/
 *.zip
 *.log
 *.pid
+task_hours_worksheet.csv
