@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}{{ site.domain }} — Settings{% endblock %}
+{% block content %}
+  <h1>Settings</h1>
+  <p class="muted">Everything that configures how the task plan gets generated for {{ site.domain }}.</p>
+
+  <div class="settings-grid">
+    <a class="card settings-card" href="/sites/{{ site.id }}/setup/connect">
+      <h2>Connections</h2>
+      <p class="muted">Connect Screaming Frog, Google Search Console, and Google Analytics 4 so real data drives the plan</p>
+      <p>
+        GSC: <span class="badge {{ 'severity-low' if gsc_connected else 'severity-medium' }}">{{ "connected" if gsc_connected else "not connected" }}</span>
+        &nbsp; GA4: <span class="badge {{ 'severity-low' if ga4_connected else 'severity-medium' }}">{{ "connected" if ga4_connected else "not connected" }}</span>
+      </p>
+    </a>
+
+    <a class="card settings-card" href="/sites/{{ site.id }}/setup/campaign">
+      <h2>Campaign &amp; Package</h2>
+      <p class="muted">Specify your campaign's timeline, package size, and how the technical work should be delivered</p>
+      {% if campaign %}
+        <p class="muted">Started {{ campaign.start_date }} · {{ campaign.duration_months }} months</p>
+        <p>{{ campaign.content_pieces_per_month or "—" }} content pieces/mo · {{ campaign.pages_to_optimize_per_month or "—" }} pages to optimize/mo</p>
+      {% else %}
+        <p class="muted">Not set up yet</p>
+      {% endif %}
+    </a>
+
+    <a class="card settings-card" href="/sites/{{ site.id }}/benchmarks">
+      <h2>Benchmarks</h2>
+      <p class="muted">Set your own thresholds for engagement rate, exit rate, CTR by position, and mobile share — customize freely, these aren't fixed rules</p>
+    </a>
+
+    <a class="card settings-card" href="/sites/{{ site.id }}/imports">
+      <h2>Data Imports</h2>
+      <p class="muted">Import a crawl or export folder to ground the plan in real data — Screaming Frog exports, GSC's own Index Coverage exports, or a mix of both, matched automatically</p>
+    </a>
+  </div>
+
+  {% if gsc_connected %}
+    <section class="card" style="margin-top: 20px;">
+      <h2>GSC Data Sync</h2>
+      <p class="muted">
+        Pull your latest Search Console data and refresh the tasks it drives (page-1 pages under-
+        performing on CTR, content gaps, etc.). Safe to re-run anytime -- adjust anything it
+        generates afterward to fit how you actually want to work.
+      </p>
+      <form method="post" action="/sites/{{ site.id }}/gsc/sync">
+        <button type="submit" class="secondary">Sync GSC data now →</button>
+      </form>
+    </section>
+  {% endif %}
+
+  {% if ga4_connected %}
+    <section class="card" style="margin-top: 20px;">
+      <h2>GA4 Data Sync</h2>
+      <p class="muted">
+        Pull your latest Analytics data and refresh the tasks it drives (engagement, exit rate,
+        mobile share, key events). Safe to re-run anytime -- adjust anything it generates
+        afterward to fit how you actually want to work.
+      </p>
+      <form method="post" action="/sites/{{ site.id }}/ga4/sync">
+        <button type="submit" class="secondary">Sync GA4 data now →</button>
+      </form>
+    </section>
+  {% endif %}
+{% endblock %}

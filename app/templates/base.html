@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{% block title %}SEO Task Planner{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/sites">SEO Task Planner</a>
+    {% if site %}
+      <nav class="site-nav">
+        <a href="/sites/{{ site.id }}" class="{{ 'active' if request.url.path == '/sites/' ~ site.id else '' }}">Overview</a>
+        <a href="/sites/{{ site.id }}/tasks" class="{{ 'active' if request.url.path.startswith('/sites/' ~ site.id ~ '/tasks') else '' }}">Task Plan</a>
+        <a href="/sites/{{ site.id }}/chat" class="{{ 'active' if request.url.path.startswith('/sites/' ~ site.id ~ '/chat') else '' }}">Chat</a>
+        <a href="/sites/{{ site.id }}/settings" class="{{ 'active' if request.url.path.startswith('/sites/' ~ site.id ~ '/settings') or request.url.path.startswith('/sites/' ~ site.id ~ '/setup') or request.url.path.startswith('/sites/' ~ site.id ~ '/benchmarks') or request.url.path.startswith('/sites/' ~ site.id ~ '/imports') else '' }}">Settings</a>
+      </nav>
+      <span class="site-name">{{ site.domain }}</span>
+    {% endif %}
+  </header>
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

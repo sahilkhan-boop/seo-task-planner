@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Sites{% endblock %}
+{% block content %}
+  <h1>Sites</h1>
+
+  <section class="card">
+    <h2>Add a site</h2>
+    <p class="muted">You'll connect platforms and add campaign details on the next screen.</p>
+    <form method="post" action="/sites" class="form-grid">
+      <label>Domain
+        <input type="text" name="domain" placeholder="example.com" required />
+      </label>
+      <button type="submit">Add site &amp; start setup →</button>
+    </form>
+  </section>
+
+  <section>
+    <h2>Existing sites</h2>
+    {% if sites %}
+      <table class="table">
+        <thead><tr><th>Domain</th><th>GSC property</th><th>GA4 property</th><th></th></tr></thead>
+        <tbody>
+          {% for s in sites %}
+          <tr>
+            <td>{{ s.domain }}</td>
+            <td>{{ s.gsc_site_url or "—" }}</td>
+            <td>{{ s.ga4_property_id or "—" }}</td>
+            <td><a href="/sites/{{ s.id }}">Open →</a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="muted">No sites yet — add one above.</p>
+    {% endif %}
+  </section>
+{% endblock %}

@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}{{ site.domain }} — Chat{% endblock %}
+{% block content %}
+  <h1>Plan Chat</h1>
+  <p class="muted">
+    Ask it to adjust the plan in plain English — "move the March content tasks to April",
+    "mark the redirect fix as done", "add a task to check the new product page". It can see
+    and actually edit tasks, not just talk about them.
+  </p>
+
+  {% if not configured %}
+    <section class="card">
+      <p class="error">
+        No Anthropic API key configured yet — add <code>ANTHROPIC_API_KEY</code> to <code>.env</code>
+        and restart the app to enable this.
+      </p>
+    </section>
+  {% endif %}
+
+  <section class="card chat-window">
+    {% if messages %}
+      {% for m in messages %}
+        <div class="chat-msg chat-msg-{{ m.role }}">
+          <div class="chat-msg-role">{{ "You" if m.role == "user" else "Assistant" }}</div>
+          <div class="chat-msg-content">{{ m.content }}</div>
+          {% if m.actions_summary %}
+            <div class="chat-msg-actions">✓ {{ m.actions_summary }}</div>
+          {% endif %}
+        </div>
+      {% endfor %}
+    {% else %}
+      <p class="muted">No messages yet — say something below to get started.</p>
+    {% endif %}
+  </section>
+
+  <form method="post" action="/sites/{{ site.id }}/chat" class="chat-input-row">
+    <input type="text" name="message" placeholder="e.g. move all March tasks to April" required autofocus
+           {{ "disabled" if not configured else "" }} />
+    <button type="submit" {{ "disabled" if not configured else "" }}>Send</button>
+  </form>
+{% endblock %}

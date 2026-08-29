@@ -1,0 +1,2 @@
+Chain Type,Number of Redirects,Loop,Address,Final Address,Final Status Code,Redirect URL 1,Status Code 1,Redirect URL 2,Status Code 2
+Redirect,2,FALSE,https://example.com/old-product,https://example.com/new-product,200,https://example.com/intermediate-product,301,https://example.com/new-product,200

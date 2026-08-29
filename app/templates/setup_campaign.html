@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}{{ site.domain }} — Campaign & Package{% endblock %}
+{% block content %}
+  <div class="wizard-steps">
+    <span class="step done">1. Connect platforms ✓</span>
+    <span class="step-sep">→</span>
+    <span class="step active">2. Campaign &amp; package</span>
+  </div>
+
+  <h1>Campaign &amp; package details</h1>
+  <p class="muted">This is what maps every task onto the calendar — when the engagement started and how much the analyst can take on.</p>
+
+  <form method="post" action="/sites/{{ site.id }}/setup/campaign" class="card">
+    <div class="form-grid">
+      <label>Campaign start date
+        <input type="date" name="start_date" value="{{ campaign.start_date if campaign else '' }}" required />
+      </label>
+      <label>Duration (months)
+        <input type="number" name="duration_months" min="1" value="{{ campaign.duration_months if campaign else 6 }}" />
+      </label>
+      <label>Content pieces in package (per month)
+        <input type="number" name="content_pieces_per_month" min="0" placeholder="e.g. 8"
+               value="{{ campaign.content_pieces_per_month if campaign and campaign.content_pieces_per_month is not none else '' }}" />
+      </label>
+      <label>Existing pages to optimize (per month)
+        <input type="number" name="pages_to_optimize_per_month" min="0" placeholder="e.g. 6"
+               value="{{ campaign.pages_to_optimize_per_month if campaign and campaign.pages_to_optimize_per_month is not none else '' }}" />
+      </label>
+      <label>That count is...
+        <select name="page_work_mode">
+          <option value="optimize_existing" {{ "selected" if not campaign or campaign.page_work_mode == "optimize_existing" else "" }}>
+            Optimizing existing pages (default)
+          </option>
+          <option value="create_new" {{ "selected" if campaign and campaign.page_work_mode == "create_new" else "" }}>
+            Creating new pages instead (no existing content worth optimizing)
+          </option>
+        </select>
+      </label>
+      <label>Analyst capacity (tasks/week)
+        <input type="number" name="capacity_per_week" min="1" value="{{ campaign.capacity_per_week if campaign else 5 }}" />
+      </label>
+      <label>Default assignee
+        <input type="text" name="default_assignee" placeholder="e.g. Priya"
+               value="{{ campaign.default_assignee if campaign else '' }}" />
+      </label>
+      <label>Technical backlog workflow
+        <select name="consolidate_technical_tasks">
+          <option value="true" {{ "selected" if not campaign or campaign.consolidate_technical_tasks else "" }}>
+            One consolidated "Technical Audit" task (recommended)
+          </option>
+          <option value="false" {{ "selected" if campaign and not campaign.consolidate_technical_tasks else "" }}>
+            Separate tasks per category (404s, redirects, indexation, server errors)
+          </option>
+        </select>
+      </label>
+    </div>
+    <p class="muted" style="margin-top: 4px;">
+      Content pieces + pages to optimize drive the recurring content/growth plan spread across every month
+      of the campaign (generate it from the Task Plan page). Default assignee pre-fills new tasks — reassign
+      any individual task later. Technical backlog workflow controls how the crawl-side findings (404s,
+      redirects, indexation-blocking, server errors) get turned into tasks — one focused audit pass, or
+      separate tickets per category. Re-run the crawl import after changing this to apply it. If a site has
+      no existing content worth optimizing, switch "That count is..." to new pages — the same monthly count
+      becomes a page-creation task instead of an optimization task.
+    </p>
+    <label class="notes-label">Anything else about the scope/package?
+      <textarea name="notes" rows="3" placeholder="e.g. link building included, no technical dev support, quarterly review call...">{{ campaign.notes if campaign else "" }}</textarea>
+    </label>
+
+    <div class="wizard-actions">
+      <a class="button secondary" href="/sites/{{ site.id }}/setup/connect">← Back</a>
+      <button type="submit">Finish setup →</button>
+    </div>
+  </form>
+{% endblock %}

@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}{{ site.domain }} — Crawl Imports{% endblock %}
+{% block content %}
+  <p><a href="/sites/{{ site.id }}/settings">← Back to Settings</a></p>
+  <h1>Crawl Imports</h1>
+  <p class="muted">
+    Run a Screaming Frog crawl (verified against the real CLI — these are three distinct flags,
+    not all bulk-export):
+  </p>
+  <pre class="muted" style="white-space: pre-wrap; font-size: 0.85em;"><code>"/Applications/Screaming Frog SEO Spider.app/Contents/MacOS/ScreamingFrogSEOSpiderLauncher" \
+  --crawl https://{{ site.domain }} --headless \
+  --output-folder {{ imports_root }}/{{ site.domain }}/2026-08-15 \
+  --export-tabs "Response Codes:All" \
+  --bulk-export "Links:All Inlinks" \
+  --save-report "Redirects:Redirect Chains" \
+  --overwrite</code></pre>
+  <p class="muted">
+    then point the form below at that folder (path relative to <code>{{ imports_root }}/</code>).
+    Note: Redirect Chains only lists multi-hop redirects — a normal single-hop 301 is read
+    from the Response Codes export's own Redirect URL column instead.
+  </p>
+
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+
+  <section class="card">
+    <h2>Import a crawl folder</h2>
+    <form method="post" action="/sites/{{ site.id }}/imports" class="form-grid">
+      <label>Folder (relative to <code>{{ imports_root }}/</code>)
+        <input type="text" name="folder" placeholder="{{ site.domain }}/2026-08-15" required />
+      </label>
+      <label>Crawl date
+        <input type="date" name="crawl_date" required />
+      </label>
+      <button type="submit">Import & generate tasks</button>
+    </form>
+  </section>
+
+  <section>
+    <h2>Import history</h2>
+    {% if imports %}
+      <table class="table">
+        <thead><tr><th>Crawl date</th><th>Folder</th><th>Imported at</th><th>Total URLs</th><th>Site scale</th><th>Issues</th></tr></thead>
+        <tbody>
+          {% for i in imports %}
+          <tr>
+            <td>{{ i.crawl_date }}</td><td>{{ i.source_folder }}</td><td>{{ i.imported_at }}</td>
+            <td>{{ "{:,}".format(i.total_urls) }}</td>
+            <td><span class="badge severity-{{ 'high' if i.site_scale == 'large' else 'medium' if i.site_scale == 'medium' else 'low' }}">{{ i.site_scale }}</span></td>
+            <td>{{ i.issue_count }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% if imports and imports[0].site_scale == "large" %}
+        <p class="muted" style="margin-top: 10px;">
+          Large site detected ({{ "{:,}".format(imports[0].total_urls) }} URLs) — month 1 is focused on
+          indexation-blockers and server errors only; redirect/inlink cleanup and lower-impact 404s are
+          scheduled from month 2 onward, per the approved workflow.
+        </p>
+      {% endif %}
+    {% else %}
+      <p class="muted">No imports yet.</p>
+    {% endif %}
+  </section>
+{% endblock %}

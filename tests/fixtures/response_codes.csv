@@ -1,0 +1,6 @@
+Address,Content Type,Status Code,Status,Redirect URL,Redirect Type
+https://example.com/,text/html,200,OK,,
+https://example.com/old-guide,text/html,404,Not Found,,
+https://example.com/old-product,text/html,301,Moved Permanently,https://example.com/intermediate-product,HTTP Redirect
+https://example.com/new-product,text/html,200,OK,,
+https://example.com/broken-api,text/html,500,Internal Server Error,,

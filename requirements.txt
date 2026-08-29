@@ -1,0 +1,13 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+jinja2
+python-multipart
+pydantic
+pytest
+reportlab
+openpyxl
+google-auth
+python-dotenv
+httpx
+anthropic

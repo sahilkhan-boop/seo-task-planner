@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}{{ site.domain }} — Overview{% endblock %}
+{% block content %}
+  <h1>{{ site.domain }}</h1>
+
+  {% if not campaign %}
+    <section class="card setup-banner">
+      <h2>Finish setting up {{ site.domain }}</h2>
+      <p class="muted">Connect your platforms and add campaign/package details so tasks can be generated and scheduled.</p>
+      <a class="button" href="/sites/{{ site.id }}/setup/connect">Continue setup →</a>
+    </section>
+  {% else %}
+    <section class="card at-a-glance">
+      <h2>At a glance</h2>
+      <div class="glance-row">
+        <div>
+          <span class="glance-label">Connections</span>
+          <span class="badge {{ 'severity-low' if site.gsc_site_url else 'severity-medium' }}">GSC {{ "connected" if site.gsc_site_url else "not connected" }}</span>
+          <span class="badge {{ 'severity-low' if site.ga4_property_id else 'severity-medium' }}">GA4 {{ "connected" if site.ga4_property_id else "not connected" }}</span>
+          <span class="badge {{ 'severity-low' if recent_imports else 'severity-medium' }}">Crawl data {{ "imported" if recent_imports else "not imported" }}</span>
+        </div>
+        <div>
+          <span class="glance-label">Campaign</span>
+          {{ campaign.start_date }} · {{ campaign.duration_months }} months · {{ campaign.capacity_per_week }} tasks/week
+        </div>
+        <div>
+          <span class="glance-label">Package</span>
+          {{ campaign.content_pieces_per_month or "—" }} content pieces/mo · {{ campaign.pages_to_optimize_per_month or "—" }} pages optimized/mo
+        </div>
+        {% if recent_imports %}
+        <div>
+          <span class="glance-label">Site scale</span>
+          <span class="badge severity-{{ 'high' if recent_imports[0].site_scale == 'large' else 'medium' if recent_imports[0].site_scale == 'medium' else 'low' }}">
+            {{ recent_imports[0].site_scale }} ({{ "{:,}".format(recent_imports[0].total_urls) }} URLs)
+          </span>
+        </div>
+        {% endif %}
+      </div>
+      {% if campaign.notes %}<p class="muted task-desc">{{ campaign.notes }}</p>{% endif %}
+      <p><a href="/sites/{{ site.id }}/settings">Edit connections/campaign in Settings →</a></p>
+    </section>
+  {% endif %}
+
+  <section class="card-row">
+    <div class="stat-card">
+      <div class="stat-number">{{ total_tasks }}</div>
+      <div class="stat-label">Total tasks</div>
+    </div>
+    {% for s in ["todo", "in_progress", "done"] %}
+    <div class="stat-card">
+      <div class="stat-number">{{ status_counts.get(s, 0) }}</div>
+      <div class="stat-label">{{ s.replace("_", " ") }}</div>
+    </div>
+    {% endfor %}
+  </section>
+
+  <h2 class="section-heading">By optimization level</h2>
+  <section class="card-row">
+    {% for level in optimization_levels %}
+    <div class="stat-card opt-row-{{ level }}">
+      <div class="stat-number">{{ optimization_level_counts.get(level, 0) }}</div>
+      <div class="stat-label">{{ optimization_level_labels[level] }}</div>
+    </div>
+    {% endfor %}
+    {% if optimization_level_counts.get("unclassified") %}
+    <div class="stat-card">
+      <div class="stat-number">{{ optimization_level_counts["unclassified"] }}</div>
+      <div class="stat-label">Unclassified</div>
+    </div>
+    {% endif %}
+  </section>
+
+  <details class="severity-details">
+    <summary class="muted">By severity (secondary — see the Task Plan page to filter/edit)</summary>
+    <section class="card-row">
+      {% for sev in ["high", "medium", "low"] %}
+      <div class="stat-card severity-{{ sev }}">
+        <div class="stat-number">{{ severity_counts.get(sev, 0) }}</div>
+        <div class="stat-label">{{ sev }} severity</div>
+      </div>
+      {% endfor %}
+    </section>
+  </details>
+
+  <section class="card">
+    <h2>Recent crawl imports</h2>
+    {% if recent_imports %}
+      <table class="table">
+        <thead><tr><th>Crawl date</th><th>Imported</th><th>Total URLs</th><th>Issues found</th></tr></thead>
+        <tbody>
+          {% for ci in recent_imports %}
+          <tr><td>{{ ci.crawl_date }}</td><td>{{ ci.imported_at }}</td><td>{{ "{:,}".format(ci.total_urls) }}</td><td>{{ ci.issue_count }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="muted">No crawl data imported yet. <a href="/sites/{{ site.id }}/imports">Import a Screaming Frog crawl →</a></p>
+    {% endif %}
+  </section>
+
+  <p><a class="button" href="/sites/{{ site.id }}/tasks">View full task plan →</a></p>
+{% endblock %}

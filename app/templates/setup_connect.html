@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% block title %}{{ site.domain }} — Connect{% endblock %}
+{% block content %}
+  <div class="wizard-steps">
+    <span class="step active">1. Connect platforms</span>
+    <span class="step-sep">→</span>
+    <span class="step">2. Campaign &amp; package</span>
+  </div>
+
+  <h1>Connect {{ site.domain }}</h1>
+  <p class="muted">Tell us where your data comes from. You can fill these in now or skip and add them later from Settings.</p>
+
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+
+  <form method="post" action="/sites/{{ site.id }}/setup/connect">
+    <section class="card connect-card">
+      <div class="connect-card-head">
+        <h2>Screaming Frog (crawl data)</h2>
+        <span class="badge {{ 'severity-low' if has_crawl_data else 'severity-medium' }}">
+          {{ "Connected" if has_crawl_data else "Not connected yet" }}
+        </span>
+      </div>
+      <p class="muted">
+        This one isn't a login — you run a Screaming Frog crawl (CLI or desktop) and import its export
+        folder from the Crawl Imports page after this wizard. That's what powers the 404/redirect tasks.
+      </p>
+    </section>
+
+    <section class="card connect-card">
+      <div class="connect-card-head">
+        <h2>Google Search Console</h2>
+        <span class="badge {{ 'severity-low' if gsc_connected else 'severity-medium' }}">
+          {{ "Connected" if gsc_connected else "Not connected yet" }}
+        </span>
+      </div>
+      <p class="muted">
+        Paste the property URL below (which GSC property to sync), and sign in with Google to
+        authorize actual data access. CTR-optimization tasks activate automatically once connected.
+      </p>
+      <label>GSC property URL
+        <input type="text" name="gsc_site_url" placeholder="https://example.com/" value="{{ site.gsc_site_url or '' }}" />
+      </label>
+      <label>Brand terms (comma-separated)
+        <input type="text" name="brand_terms" placeholder="e.g. acme, acme corp" value="{{ site.brand_terms or '' }}" />
+      </label>
+      <label>Brand regex (optional, overrides brand terms above)
+        <input type="text" name="brand_regex" placeholder="e.g. (?i)\bacme[a-z]*\b" value="{{ site.brand_regex or '' }}" />
+      </label>
+      <p class="muted" style="margin-top: 4px; font-size: 0.82rem;">
+        Used to tell branded from non-branded search queries -- both for spotting content gaps on
+        page-2-ish pages (position 5-15), and for CTR benchmarks segmented by branded vs non-branded
+        (e.g. a "branded_pos_1_5" benchmark) once configured. A query counts as branded if it contains
+        any brand term, or matches the regex when one's set (spelling variants, apostrophes/hyphens,
+        sub-brand names a plain term list can't cover well). Invalid regex is ignored, never blocks a sync.
+      </p>
+
+      <p class="muted" style="margin-top: 14px; font-size: 0.82rem;">
+        Optional -- same idea as Search Console's own Performance-report filters. Scope task
+        generation to (or away from) a specific URL path or query pattern, entirely optional.
+      </p>
+      <div class="form-grid">
+        <label>Page filter (regex)
+          <input type="text" name="gsc_page_filter_regex" placeholder="e.g. ^/products/"
+                 value="{{ site.gsc_page_filter_regex or '' }}" />
+        </label>
+        <label>Page filter mode
+          <select name="gsc_page_filter_mode">
+            <option value="include" {{ "selected" if site.gsc_page_filter_mode != "exclude" else "" }}>Include matches</option>
+            <option value="exclude" {{ "selected" if site.gsc_page_filter_mode == "exclude" else "" }}>Exclude matches</option>
+          </select>
+        </label>
+        <label>Query filter (regex)
+          <input type="text" name="gsc_query_filter_regex" placeholder="e.g. ^how to"
+                 value="{{ site.gsc_query_filter_regex or '' }}" />
+        </label>
+        <label>Query filter mode
+          <select name="gsc_query_filter_mode">
+            <option value="include" {{ "selected" if site.gsc_query_filter_mode != "exclude" else "" }}>Include matches</option>
+            <option value="exclude" {{ "selected" if site.gsc_query_filter_mode == "exclude" else "" }}>Exclude matches</option>
+          </select>
+        </label>
+      </div>
+      {% if google_oauth_configured %}
+        <p style="margin-top: 10px;">
+          <button type="submit" class="secondary" formaction="/sites/{{ site.id }}/setup/connect/gsc-oauth">
+            {{ "Reconnect" if gsc_connected else "Connect" }} via Google →
+          </button>
+        </p>
+      {% else %}
+        <p class="muted" style="margin-top: 10px;">
+          Live sign-in needs <code>GOOGLE_CLIENT_ID</code>/<code>GOOGLE_CLIENT_SECRET</code> in <code>.env</code> first.
+        </p>
+      {% endif %}
+    </section>
+
+    <section class="card connect-card">
+      <div class="connect-card-head">
+        <h2>Google Analytics 4</h2>
+        <span class="badge {{ 'severity-low' if ga4_connected else 'severity-medium' }}">
+          {{ "Connected" if ga4_connected else "Not connected yet" }}
+        </span>
+      </div>
+      <p class="muted">
+        Paste the property ID below, and sign in with Google to authorize actual data access.
+        Engagement/exit-rate/mobile-share/key-event tasks activate automatically once connected.
+      </p>
+      <label>GA4 property ID
+        <input type="text" name="ga4_property_id" placeholder="123456789" value="{{ site.ga4_property_id or '' }}" />
+      </label>
+
+      <p class="muted" style="margin-top: 14px; font-size: 0.82rem;">
+        Optional -- scope task generation to (or away from) a specific URL path, e.g. if this
+        campaign only covers one folder/section of the site.
+      </p>
+      <div class="form-grid">
+        <label>Page filter (regex)
+          <input type="text" name="ga4_page_filter_regex" placeholder="e.g. ^/blog/"
+                 value="{{ site.ga4_page_filter_regex or '' }}" />
+        </label>
+        <label>Page filter mode
+          <select name="ga4_page_filter_mode">
+            <option value="include" {{ "selected" if site.ga4_page_filter_mode != "exclude" else "" }}>Include matches</option>
+            <option value="exclude" {{ "selected" if site.ga4_page_filter_mode == "exclude" else "" }}>Exclude matches</option>
+          </select>
+        </label>
+      </div>
+      {% if google_oauth_configured %}
+        <p style="margin-top: 10px;">
+          <button type="submit" class="secondary" formaction="/sites/{{ site.id }}/setup/connect/ga4-oauth">
+            {{ "Reconnect" if ga4_connected else "Connect" }} via Google →
+          </button>
+        </p>
+      {% else %}
+        <p class="muted" style="margin-top: 10px;">
+          Live sign-in needs <code>GOOGLE_CLIENT_ID</code>/<code>GOOGLE_CLIENT_SECRET</code> in <code>.env</code> first.
+        </p>
+      {% endif %}
+    </section>
+
+    <div class="wizard-actions">
+      <button type="submit">Continue → Campaign &amp; package details</button>
+    </div>
+  </form>
+{% endblock %}

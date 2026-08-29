@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% block title %}{{ site.domain }} — Task Plan{% endblock %}
+{% block content %}
+  <h1>Task Plan</h1>
+  <p class="muted">{{ total }} task(s) across the campaign, one month shown at a time below — use Export CSV for the full list at once.</p>
+
+  {% if campaign and (campaign.content_pieces_per_month or campaign.pages_to_optimize_per_month) %}
+    <form method="post" action="/sites/{{ site.id }}/tasks/generate-content-plan" style="margin-bottom: 14px;">
+      <button type="submit" class="secondary">
+        (Re)generate content &amp; growth plan for all {{ campaign.duration_months }} months →
+      </button>
+      <span class="muted" style="margin-left: 8px; font-size: 0.85rem;">
+        Fills every month with {{ campaign.content_pieces_per_month or 0 }} new-content + {{ campaign.pages_to_optimize_per_month or 0 }} page-optimization tasks/month
+      </span>
+    </form>
+  {% elif campaign %}
+    <p class="muted">
+      Set content pieces/pages-to-optimize per month in
+      <a href="/sites/{{ site.id }}/setup/campaign">Campaign &amp; Package</a> to generate a recurring plan across all months.
+    </p>
+  {% endif %}
+
+  <form method="get" class="filter-bar">
+    <select name="status">
+      <option value="">All statuses</option>
+      {% for s in ["todo", "in_progress", "done"] %}
+        <option value="{{ s }}" {{ "selected" if filters.status == s else "" }}>{{ s }}</option>
+      {% endfor %}
+    </select>
+    <select name="severity">
+      <option value="">All severities</option>
+      {% for sev in ["high", "medium", "low"] %}
+        <option value="{{ sev }}" {{ "selected" if filters.severity == sev else "" }}>{{ sev }}</option>
+      {% endfor %}
+    </select>
+    <select name="optimization_level">
+      <option value="">All optimization levels</option>
+      {% for level in optimization_levels %}
+        <option value="{{ level }}" {{ "selected" if filters.optimization_level == level else "" }}>{{ optimization_level_labels[level] }}</option>
+      {% endfor %}
+    </select>
+    <select name="assignee">
+      <option value="">Everyone</option>
+      <option value="none" {{ "selected" if filters.assignee == "none" else "" }}>Unassigned</option>
+      {% for name in all_assignees %}
+        <option value="{{ name }}" {{ "selected" if filters.assignee == name else "" }}>{{ name }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit">Filter</button>
+    <a class="button secondary" href="/sites/{{ site.id }}/tasks/calendar?assignee={{ filters.assignee }}">Calendar view →</a>
+    <a class="button secondary" href="/sites/{{ site.id }}/tasks/export.csv">Export CSV →</a>
+  </form>
+
+
+  {% macro qs(m) -%}
+    ?status={{ filters.status }}&category={{ filters.category }}&severity={{ filters.severity }}&optimization_level={{ filters.optimization_level }}&assignee={{ filters.assignee }}&month={{ "none" if m is none else m }}
+  {%- endmacro %}
+
+  {% if available_months %}
+    <div class="calendar-toolbar" style="margin-bottom: 10px;">
+      <div>
+        {% if has_prev %}
+          <a class="button secondary" href="/sites/{{ site.id }}/tasks{{ qs(prev_month) }}">← Previous month</a>
+        {% endif %}
+      </div>
+      <form method="get" style="display:inline-flex; gap:8px; align-items:center;">
+        <input type="hidden" name="status" value="{{ filters.status }}" />
+        <input type="hidden" name="category" value="{{ filters.category }}" />
+        <input type="hidden" name="severity" value="{{ filters.severity }}" />
+        <input type="hidden" name="optimization_level" value="{{ filters.optimization_level }}" />
+        <input type="hidden" name="assignee" value="{{ filters.assignee }}" />
+        <select name="month" onchange="this.form.submit()">
+          {% for m in available_months %}
+            <option value="{{ 'none' if m is none else m }}" {{ "selected" if m == current_month else "" }}>
+              {{ m | month_label }}
+            </option>
+          {% endfor %}
+        </select>
+      </form>
+      <div>
+        {% if has_next %}
+          <a class="button secondary" href="/sites/{{ site.id }}/tasks{{ qs(next_month) }}">Next month →</a>
+        {% endif %}
+      </div>
+    </div>
+  {% endif %}
+
+  {% if page_tasks %}
+    <section class="card month-block">
+      <h2>{{ current_month | month_label }}</h2>
+      <table class="table task-plan-table">
+        <thead>
+          <tr>
+            <th>Date</th><th>Optimization Level</th><th>Category</th><th>Task</th><th>Description / Logic</th>
+            <th>Assignee</th><th>Status</th><th>Export</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in page_tasks %}
+          <tr class="{{ 'opt-row-' ~ t.optimization_level if t.optimization_level else 'severity-row-' ~ t.severity }}">
+            <td>
+              <form method="post" action="/sites/{{ site.id }}/tasks/{{ t.id }}/due-date">
+                <input type="hidden" name="redirect_to" value="/tasks" />
+                <input type="date" name="target_date" value="{{ t.target_date or '' }}" required
+                       onchange="this.form.submit()" title="Reschedule this task" />
+              </form>
+            </td>
+            <td>
+              <form method="post" action="/sites/{{ site.id }}/tasks/{{ t.id }}/optimization-level">
+                <input type="hidden" name="redirect_to" value="/tasks" />
+                <select name="optimization_level" class="badge {{ 'opt-' ~ t.optimization_level if t.optimization_level else 'severity-' ~ t.severity }}"
+                        onchange="this.form.submit()" title="Change this task's optimization level">
+                  <option value="" {{ "selected" if not t.optimization_level else "" }}>— unset ({{ t.severity }} severity) —</option>
+                  {% for level in optimization_level_labels %}
+                    <option value="{{ level }}" {{ "selected" if t.optimization_level == level else "" }}>{{ optimization_level_labels[level] }}</option>
+                  {% endfor %}
+                </select>
+              </form>
+            </td>
+            <td>
+              {{ t.category.replace("_", " ") }}
+              {% if populated_by.get(t.category) %}
+                <br /><span class="muted" style="font-size: 0.75rem;">({{ populated_by[t.category] }})</span>
+              {% endif %}
+            </td>
+            <td>{{ t.title }}</td>
+            <td class="task-desc-cell">
+              {{ t.description }}
+              {% if t.affected_urls %}
+                <span class="muted" style="font-size: 0.78rem;"> — {{ t.affected_urls|length }} URL(s), see Export →</span>
+              {% endif %}
+              {% if t.metric_actual is not none or t.metric_benchmark is not none %}
+                <br />
+                {% if t.metric_actual is not none %}
+                  <span class="metric-highlight">Actual: {{ t.metric_actual }}</span>
+                {% endif %}
+                {% if t.metric_benchmark is not none %}
+                  <span class="metric-highlight">Benchmark: {{ t.metric_benchmark }}</span>
+                {% endif %}
+              {% endif %}
+            </td>
+            <td>
+              <form method="post" action="/sites/{{ site.id }}/tasks/{{ t.id }}/assignee">
+                <input type="hidden" name="redirect_to" value="/tasks" />
+                <input type="text" name="assignee" value="{{ t.assignee or '' }}" placeholder="Unassigned"
+                       onchange="this.form.submit()" size="10" />
+              </form>
+            </td>
+            <td>
+              <form method="post" action="/sites/{{ site.id }}/tasks/{{ t.id }}/status">
+                <select name="status" onchange="this.form.submit()">
+                  {% for s in ["todo", "in_progress", "done"] %}
+                    <option value="{{ s }}" {{ "selected" if t.status == s else "" }}>{{ s }}</option>
+                  {% endfor %}
+                </select>
+              </form>
+            </td>
+            <td><a class="button secondary" href="/sites/{{ site.id }}/tasks/{{ t.id }}/export.csv">Export →</a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+  {% else %}
+    <p class="muted">No tasks yet — import a crawl or connect GSC/GA4 to generate the plan.</p>
+  {% endif %}
+{% endblock %}

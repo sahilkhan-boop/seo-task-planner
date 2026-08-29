@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.pyc
+*.db
+.env
+imports/*
+!imports/.gitkeep
+.pytest_cache/
+
+# PyInstaller build output (see build_exe.md) -- rebuild locally with build_exe.md's
+# command rather than committing the built binary.
+build/
+dist/
+*.spec
+*.zip
+*.log
+*.pid

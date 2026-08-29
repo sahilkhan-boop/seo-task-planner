@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}{{ site.domain }} — Benchmarks{% endblock %}
+{% block content %}
+  <p><a href="/sites/{{ site.id }}/settings">← Back to Settings</a></p>
+  <h1>Benchmarks</h1>
+  <p class="muted">
+    Every task the platform generates from GA4/GSC data (phase 3-4) is a metric compared against one of
+    these thresholds. CTR is segmented by average position because expected CTR at position 2 and
+    position 15 are very different — flag a page against the wrong segment and you'll chase pages that
+    are actually fine.
+  </p>
+
+  <form method="post" action="/sites/{{ site.id }}/benchmarks/seed-defaults">
+    <button type="submit" class="secondary">Seed suggested defaults</button>
+  </form>
+
+  <section class="card">
+    <h2>Add a benchmark</h2>
+    <form method="post" action="/sites/{{ site.id }}/benchmarks" class="form-grid">
+      <label>Metric key
+        <input type="text" name="metric_key" placeholder="engagement_rate" required />
+      </label>
+      <label>Segment (optional)
+        <input type="text" name="segment" placeholder="pos_1_3 / mobile / template:blog" />
+      </label>
+      <label>Comparator
+        <select name="comparator">
+          <option value="lt">Flag when actual is below target (lt)</option>
+          <option value="gt">Flag when actual is above target (gt)</option>
+        </select>
+      </label>
+      <label>Target value
+        <input type="number" step="0.01" name="target_value" required />
+      </label>
+      <button type="submit">Add benchmark</button>
+    </form>
+  </section>
+
+  <section>
+    <h2>Configured benchmarks</h2>
+    {% if benchmarks %}
+      <p class="muted">
+        Each row below reads as one plain rule, e.g. <em>"For pages in <code>pos_1_5</code>, flag
+        <code>ctr</code> when the actual value is below target <code>0.18</code>."</em> A blank Segment
+        means the rule applies to the whole site, not just one bucket of pages.
+      </p>
+      <table class="table">
+        <thead><tr><th>Metric key</th><th>Segment</th><th>Rule</th><th>Target</th><th>What this means</th><th></th></tr></thead>
+        <tbody>
+          {% for b in benchmarks %}
+          <tr>
+            <td>{{ b.metric_key }}</td>
+            <td>{{ b.segment or "site-wide" }}</td>
+            <td>{{ "actual < target" if b.comparator == "lt" else "actual > target" }}</td>
+            <td>{{ b.target_value }}</td>
+            <td class="muted" style="font-size: 0.85rem;">
+              For {{ ("pages in " ~ b.segment) if b.segment else "all pages (site-wide)" }}, flag
+              <strong>{{ b.metric_key }}</strong> when the actual value is
+              {{ "below" if b.comparator == "lt" else "above" }} target <strong>{{ b.target_value }}</strong>.
+            </td>
+            <td>
+              <form method="post" action="/benchmarks/{{ b.id }}/delete" style="display:inline">
+                <button type="submit" class="danger">Delete</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="muted">No benchmarks yet — seed the defaults above or add your own.</p>
+    {% endif %}
+  </section>
+{% endblock %}

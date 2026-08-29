@@ -1,0 +1,452 @@
+/* ---------- Design tokens ---------- */
+:root {
+  --bg: #ffffff;
+  --bg-subtle: #fafbfc;
+  --fg: #14171f;
+  --muted: #6b7280;
+  --muted-2: #9aa1ac;
+  --border: #e7e9ee;
+  --card-bg: #f8fafc;
+  --accent: #4f46e5;
+  --accent-hover: #4338ca;
+  --accent-fg: #ffffff;
+  --accent-tint: #eef2ff;
+
+  --high: #ef4444;
+  --high-tint: #fef2f2;
+  --high-text: #b91c1c;
+  --medium: #f59e0b;
+  --medium-tint: #fffbeb;
+  --medium-text: #b45309;
+  --low: #10b981;
+  --low-tint: #ecfdf5;
+  --low-text: #047857;
+  --info: #0ea5e9;
+  --info-tint: #f0f9ff;
+  --info-text: #0369a1;
+
+  --today-ring: #ef4444;
+  --shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 6px rgba(15, 23, 42, 0.03);
+  --radius: 12px;
+  --radius-sm: 8px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0b0d12;
+    --bg-subtle: #0e1116;
+    --fg: #e6e8ee;
+    --muted: #9aa1ac;
+    --muted-2: #6b7280;
+    --border: #262b36;
+    --card-bg: #12151c;
+    --accent: #818cf8;
+    --accent-hover: #a5b4fc;
+    --accent-fg: #0b0d12;
+    --accent-tint: rgba(129, 140, 248, 0.14);
+
+    --high: #f87171;
+    --high-tint: rgba(239, 68, 68, 0.14);
+    --high-text: #fca5a5;
+    --medium: #fbbf24;
+    --medium-tint: rgba(245, 158, 11, 0.14);
+    --medium-text: #fcd34d;
+    --low: #34d399;
+    --low-tint: rgba(16, 185, 129, 0.14);
+    --low-text: #6ee7b7;
+    --info: #38bdf8;
+    --info-tint: rgba(14, 165, 233, 0.14);
+    --info-text: #7dd3fc;
+
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.2), 0 4px 14px rgba(0, 0, 0, 0.18);
+  }
+}
+
+/* ---------- Base ---------- */
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI",
+    Inter, Roboto, Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  line-height: 1.5;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+h1, h2, h3 { font-weight: 650; letter-spacing: -0.015em; color: var(--fg); }
+h1 { font-size: 1.7rem; margin: 0 0 6px; }
+h2 { font-size: 1.1rem; margin: 0 0 10px; }
+.container { max-width: 1120px; margin: 0 auto; padding: 28px 24px 64px; }
+
+/* ---------- Top nav ---------- */
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.brand { font-weight: 700; letter-spacing: -0.01em; color: var(--fg); display: flex; align-items: center; gap: 8px; }
+.brand::before {
+  content: "";
+  display: inline-block;
+  width: 9px; height: 9px;
+  border-radius: 3px;
+  background: linear-gradient(135deg, var(--accent), var(--low));
+}
+.brand:hover { text-decoration: none; }
+.site-nav { display: flex; gap: 4px; }
+.site-nav a {
+  color: var(--muted);
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 0.92rem;
+  font-weight: 500;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.site-nav a:hover { color: var(--fg); background: var(--card-bg); text-decoration: none; }
+.site-nav a.active { color: var(--accent); background: var(--accent-tint); font-weight: 600; }
+.site-name { margin-left: auto; color: var(--muted-2); font-size: 0.9rem; }
+
+/* ---------- Cards ---------- */
+.card, .month-block {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px 22px;
+  margin-bottom: 20px;
+  box-shadow: var(--shadow);
+}
+.card-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+.section-heading { font-size: 0.95rem; font-weight: 600; margin: 0 0 10px; color: var(--fg); }
+.severity-details { margin-bottom: 20px; }
+.severity-details summary { cursor: pointer; margin-bottom: 10px; }
+.stat-card {
+  flex: 1;
+  min-width: 110px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  text-align: center;
+  box-shadow: var(--shadow);
+}
+.stat-number { font-size: 1.6rem; font-weight: 700; letter-spacing: -0.02em; }
+.stat-label { color: var(--muted); font-size: 0.82rem; text-transform: capitalize; margin-top: 2px; }
+.stat-card.severity-high .stat-number { color: var(--high); }
+.stat-card.severity-medium .stat-number { color: var(--medium); }
+.stat-card.severity-low .stat-number { color: var(--low); }
+/* Scoped to .stat-card specifically (not the bare .opt-row-* classes used for table/
+   calendar row borders elsewhere) -- these tiles need the same visual weight the old
+   severity tiles had (a full tint background, not just a thin border), or they read
+   as flat/lifeless next to everything else on the page. */
+.stat-card.opt-row-key_fix { background: var(--high-tint); }
+.stat-card.opt-row-key_fix .stat-number { color: var(--high); }
+.stat-card.opt-row-quick_win { background: var(--medium-tint); }
+.stat-card.opt-row-quick_win .stat-number { color: var(--medium); }
+.stat-card.opt-row-ongoing_content { background: var(--low-tint); }
+.stat-card.opt-row-ongoing_content .stat-number { color: var(--low); }
+.stat-card.opt-row-benchmarking { background: var(--accent-tint); }
+.stat-card.opt-row-benchmarking .stat-number { color: var(--accent); }
+.stat-card.opt-row-reporting { background: var(--info-tint); }
+.stat-card.opt-row-reporting .stat-number { color: var(--info); }
+
+/* ---------- Forms ---------- */
+.form-grid { display: flex; flex-wrap: wrap; gap: 16px; align-items: end; margin-top: 10px; }
+.form-grid label { display: flex; flex-direction: column; gap: 5px; font-size: 0.85rem; color: var(--muted); font-weight: 500; }
+input, select, button, textarea {
+  font: inherit;
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--fg);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-tint);
+}
+button {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border: none;
+  cursor: pointer;
+  font-weight: 600;
+  transition: background 0.15s ease, transform 0.05s ease;
+}
+button:hover { background: var(--accent-hover); }
+button:active { transform: translateY(1px); }
+button.secondary { background: transparent; color: var(--accent); border: 1px solid var(--border); font-weight: 500; }
+button.secondary:hover { background: var(--accent-tint); border-color: var(--accent); }
+button.danger { background: transparent; color: var(--high-text); border: 1px solid var(--high); padding: 4px 10px; font-size: 0.78rem; font-weight: 500; }
+button.danger:hover { background: var(--high-tint); }
+.button {
+  display: inline-block;
+  text-decoration: none;
+  padding: 9px 16px;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-weight: 600;
+  transition: background 0.15s ease;
+}
+.button:hover { background: var(--accent-hover); text-decoration: none; }
+.button.secondary { background: transparent; color: var(--accent); border: 1px solid var(--border); font-weight: 500; }
+.button.secondary:hover { background: var(--accent-tint); border-color: var(--accent); text-decoration: none; }
+
+/* ---------- Tables ---------- */
+.table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+.table th, .table td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.table th { color: var(--muted); font-weight: 600; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em; }
+.table tbody tr { transition: background 0.12s ease; }
+.table tbody tr:hover { background: var(--bg-subtle); }
+
+/* ---------- Badges / severity ---------- */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+.badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; flex: none; }
+/* A native <select> sizes itself to fit its content (varies by browser, often the
+   widest option in the whole list, e.g. "— unset (medium severity) —" for the
+   Optimization Level picker) -- inside a table-layout:fixed column that intrinsic
+   width isn't respected, so the select visually overflows past its own cell and
+   into the next column's text (seen in the Task Plan table's Optimization Level
+   column bleeding into Category). Force it back to its cell's actual width and
+   truncate with an ellipsis instead of spilling over. */
+select.badge {
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.badge.severity-high, .severity-high { background: var(--high-tint); color: var(--high-text); }
+.badge.severity-high::before { background: var(--high); }
+.badge.severity-medium, .severity-medium { background: var(--medium-tint); color: var(--medium-text); }
+.badge.severity-medium::before { background: var(--medium); }
+.badge.severity-low, .severity-low { background: var(--low-tint); color: var(--low-text); }
+.badge.severity-low::before { background: var(--low); }
+.severity-row-high { border-left: 3px solid var(--high); }
+.severity-row-medium { border-left: 3px solid var(--medium); }
+.severity-row-low { border-left: 3px solid var(--low); }
+
+/* ---------- Optimization level (Benchmarking / Key Fix / Quick Win / Ongoing Content / Reporting) ----------
+   The analyst-facing priority framing, replacing severity as the primary badge -- key_fix reuses
+   the "urgent" red, quick_win the "moderate" amber, ongoing_content the "steady" green, benchmarking
+   gets its own accent color since it's a different kind of work, not a priority tier, and reporting
+   gets a distinct blue since it's a parallel cadence, not part of the phase sequence at all. */
+.badge.opt-key_fix, .opt-key_fix { background: var(--high-tint); color: var(--high-text); }
+.badge.opt-key_fix::before { background: var(--high); }
+.badge.opt-quick_win, .opt-quick_win { background: var(--medium-tint); color: var(--medium-text); }
+.badge.opt-quick_win::before { background: var(--medium); }
+.badge.opt-ongoing_content, .opt-ongoing_content { background: var(--low-tint); color: var(--low-text); }
+.badge.opt-ongoing_content::before { background: var(--low); }
+.badge.opt-benchmarking, .opt-benchmarking { background: var(--accent-tint); color: var(--accent); }
+.badge.opt-benchmarking::before { background: var(--accent); }
+.badge.opt-reporting, .opt-reporting { background: var(--info-tint); color: var(--info-text); }
+.badge.opt-reporting::before { background: var(--info); }
+.opt-row-key_fix { border-left: 3px solid var(--high); }
+.opt-row-quick_win { border-left: 3px solid var(--medium); }
+.opt-row-ongoing_content { border-left: 3px solid var(--low); }
+.opt-row-reporting { border-left: 3px solid var(--info); }
+.opt-row-benchmarking { border-left: 3px solid var(--accent); }
+
+.muted { color: var(--muted); }
+.error { color: var(--high-text); }
+.filter-bar { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
+.url-list { margin: 4px 0; padding-left: 18px; }
+.task-desc { white-space: pre-line; color: var(--muted); }
+/* Makes the real Actual/Benchmark numbers catch the eye instead of blending into
+   the muted description text -- a batched/systemic task has no single per-page
+   "actual" (metric_actual is None), but still carries the one real Benchmark
+   value the whole batch was checked against, so this renders whichever of the
+   two the task actually has. */
+.metric-highlight {
+  display: inline-block;
+  color: var(--high-text);
+  background: var(--high-tint);
+  font-weight: 600;
+  font-size: 0.78rem;
+  padding: 1px 7px;
+  border-radius: 999px;
+  margin-top: 4px;
+  margin-right: 4px;
+}
+.task-desc-cell {
+  white-space: pre-line;
+  color: var(--muted);
+  font-size: 0.85rem;
+  /* A table's default auto layout ignores a <td>'s max-width when its content has no
+     natural break points (a long URL, one unbroken word) -- it just stretches the
+     column instead of wrapping, which is exactly what happened here. Forcing breaks
+     within the cell is what actually makes wrapping take effect; the column's actual
+     width is now set directly (see .task-plan-table below) rather than left to
+     auto-layout guessing, which is what let this column balloon while Assignee/
+     Status/Export got squeezed to the far right with big empty gaps between them. */
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+/* Task Plan table only (see tasks.html) -- fixed column widths instead of the
+   browser's auto layout, which gave Description/Logic's actual text content far
+   more width than it needed while leaving Assignee/Status/Export cramped out at
+   the far right with large empty gaps in between. */
+.task-plan-table { table-layout: fixed; }
+.task-plan-table th:nth-child(1), .task-plan-table td:nth-child(1) { width: 10%; }  /* Date */
+.task-plan-table th:nth-child(2), .task-plan-table td:nth-child(2) { width: 13%; }  /* Optimization Level */
+.task-plan-table th:nth-child(3), .task-plan-table td:nth-child(3) { width: 11%; }  /* Category */
+.task-plan-table th:nth-child(4), .task-plan-table td:nth-child(4) { width: 12%; }  /* Task */
+.task-plan-table th:nth-child(5), .task-plan-table td:nth-child(5) { width: 31%; }  /* Description / Logic */
+.task-plan-table th:nth-child(6), .task-plan-table td:nth-child(6) { width: 8%; }   /* Assignee */
+.task-plan-table th:nth-child(7), .task-plan-table td:nth-child(7) { width: 9%; }   /* Status */
+.task-plan-table th:nth-child(8), .task-plan-table td:nth-child(8) { width: 6%; }   /* Export */
+/* Every input/select in this table (date picker, optimization-level badge, status,
+   assignee) defaults to its own browser-intrinsic width -- e.g. a native
+   <input type="date"> reserves room for its calendar-icon button regardless of
+   the column it's sitting in. table-layout:fixed keeps the CELL at its declared
+   %, but doesn't shrink the CONTROL inside it to match, so it was overflowing/
+   overlapping neighboring cells and rows (Optimization Level bleeding into
+   Category, the date picker's icon overlapping the row below). Forcing every
+   control to fill its own cell instead fixes all of them the same way. */
+.task-plan-table td input,
+.task-plan-table td select {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+code { background: var(--card-bg); padding: 2px 6px; border-radius: 4px; font-size: 0.85em; border: 1px solid var(--border); }
+details summary { cursor: pointer; font-weight: 500; }
+details summary:hover { color: var(--accent); }
+
+/* ---------- Setup wizard ---------- */
+.wizard-steps { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; color: var(--muted-2); font-size: 0.88rem; font-weight: 500; }
+.wizard-steps .step.active { color: var(--accent); font-weight: 650; }
+.wizard-steps .step.done { color: var(--low-text); }
+.wizard-steps .step-sep { color: var(--border); }
+.connect-card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.connect-card-head h2 { margin: 0; }
+.connect-card { margin-bottom: 14px; }
+.connect-card label { display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; color: var(--muted); margin-top: 10px; }
+.wizard-actions { display: flex; gap: 12px; align-items: center; margin-top: 18px; }
+.notes-label { display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; color: var(--muted); margin-top: 16px; }
+
+/* ---------- Settings index ---------- */
+.settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+.settings-card { text-decoration: none; color: var(--fg); display: block; transition: transform 0.12s ease, border-color 0.15s ease, box-shadow 0.15s ease; }
+.settings-card:hover { border-color: var(--accent); transform: translateY(-2px); box-shadow: 0 4px 16px rgba(79, 70, 229, 0.1); text-decoration: none; }
+.settings-card h2 { margin-top: 0; }
+
+/* ---------- Overview at-a-glance ---------- */
+.setup-banner { text-align: center; }
+.glance-row { display: flex; flex-wrap: wrap; gap: 32px; margin: 10px 0; }
+.glance-row > div { display: flex; flex-direction: column; gap: 6px; }
+.glance-label { color: var(--muted-2); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
+
+/* ---------- Calendar view ---------- */
+.calendar-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 4px; }
+.calendar-toolbar h1 { margin-bottom: 0; }
+.calendar-toolbar-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.month-calendar-card { padding: 14px; }
+.month-calendar-card h2 { margin: 4px 0 12px 8px; font-size: 1.3rem; font-weight: 700; letter-spacing: -0.02em; }
+.month-calendar { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.month-calendar th {
+  color: var(--muted-2);
+  padding: 8px 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+.month-calendar td {
+  border: 1px solid var(--border);
+  vertical-align: top;
+  height: 104px;
+  width: 14.28%;
+  padding: 6px;
+  font-size: 0.75rem;
+  overflow: hidden;
+}
+.month-calendar td.out-of-month { background: var(--bg-subtle); }
+.month-calendar td.out-of-month .cal-day-num { color: var(--muted-2); }
+.cal-day-num {
+  font-weight: 600;
+  margin-bottom: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 4px;
+  border-radius: 50%;
+}
+.month-calendar td.is-today .cal-day-num {
+  background: var(--today-ring);
+  color: white;
+}
+.cal-task {
+  border-radius: 5px;
+  padding: 3px 6px;
+  margin-bottom: 3px;
+  overflow: hidden;
+  border-left: 3px solid transparent;
+  background: var(--card-bg);
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+  cursor: default;
+}
+/* Hover highlight -- lifts the task slightly and shows its full title/mechanism (see
+   the enriched `title` tooltip in tasks_calendar.html) since chip text is truncated. */
+.cal-task:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.12);
+  filter: brightness(0.97);
+}
+.cal-task.opt-key_fix { background: var(--high-tint); border-left-color: var(--high); }
+.cal-task.opt-quick_win { background: var(--medium-tint); border-left-color: var(--medium); }
+.cal-task.opt-ongoing_content { background: var(--low-tint); border-left-color: var(--low); }
+.cal-task.opt-benchmarking { background: var(--accent-tint); border-left-color: var(--accent); }
+.cal-task.opt-reporting { background: var(--info-tint); border-left-color: var(--info); }
+/* fallback for tasks with no optimization_level set yet (e.g. custom chat-created) */
+.cal-task.severity-high { background: var(--high-tint); border-left-color: var(--high); }
+.cal-task.severity-medium { background: var(--medium-tint); border-left-color: var(--medium); }
+.cal-task.severity-low { background: var(--low-tint); border-left-color: var(--low); }
+.cal-task-title {
+  font-size: 0.68rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--fg);
+}
+.cal-task-meta { font-size: 0.6rem; opacity: 0.75; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--muted); }
+.cal-task-more { font-size: 0.65rem; color: var(--muted-2); padding-left: 3px; }
+
+/* Chat */
+.chat-window { display: flex; flex-direction: column; gap: 14px; min-height: 200px; max-height: 60vh; overflow-y: auto; }
+.chat-msg { max-width: 80%; padding: 10px 14px; border-radius: var(--radius); }
+.chat-msg-user { align-self: flex-end; background: var(--accent); color: var(--accent-fg); }
+.chat-msg-assistant { align-self: flex-start; background: var(--card-bg); border: 1px solid var(--border); }
+.chat-msg-role { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; opacity: 0.7; margin-bottom: 4px; }
+.chat-msg-content { white-space: pre-wrap; font-size: 0.92rem; line-height: 1.5; }
+.chat-msg-actions {
+  margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(0,0,0,0.08);
+  font-size: 0.8rem; color: var(--low-text); font-weight: 500;
+}
+.chat-input-row { display: flex; gap: 10px; margin-top: 16px; }
+.chat-input-row input { flex: 1; }

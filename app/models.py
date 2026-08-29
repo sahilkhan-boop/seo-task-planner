@@ -1,0 +1,226 @@
+"""ORM models.
+
+Covers the full data model from the plan. Phase 1 (this build) actively uses
+Site, Campaign, Benchmark, CrawlImport, CrawlIssue, and Task. Connection and
+MetricSnapshot are defined now so the GSC/GA4 phases (3-4) plug in without a
+schema migration.
+"""
+from __future__ import annotations
+
+import datetime as dt
+
+from sqlalchemy import JSON, Boolean, Date, DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.db import Base
+
+
+def _utcnow() -> dt.datetime:
+    """Naive UTC now -- these columns aren't timezone-aware, so strip tzinfo after generating it."""
+    return dt.datetime.now(dt.timezone.utc).replace(tzinfo=None)
+
+
+class Site(Base):
+    __tablename__ = "sites"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    domain: Mapped[str] = mapped_column(String, unique=True)
+    gsc_site_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    ga4_property_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    brand_terms: Mapped[str | None] = mapped_column(String, nullable=True)  # comma-separated, for non-branded query detection
+    # Optional regex alternative to brand_terms' plain substring matching -- for a
+    # brand name with real-world spelling variants/misspellings a comma-separated
+    # term list can't cover well (apostrophe/hyphen variants, common misspellings,
+    # sub-brand names, the bare domain). When set, this takes priority over
+    # brand_terms for branded-query classification (see gsc_rules.py's
+    # is_branded_query); invalid regex is ignored the same way the GSC/GA4 filter
+    # regexes already are (see apply_gsc_filters), never crashes a sync.
+    brand_regex: Mapped[str | None] = mapped_column(String, nullable=True)
+    # GSC-report-style regex filters (same idea as Search Console's own Performance
+    # report page/query filters) -- optional, applied before the GSC rule engine sees
+    # the data at all, so an analyst can scope task generation to (or away from) a
+    # specific URL path or query pattern without touching code. Invalid regex is
+    # ignored rather than erroring the whole sync -- see app/services.py's
+    # _apply_gsc_filters.
+    gsc_page_filter_regex: Mapped[str | None] = mapped_column(String, nullable=True)
+    gsc_page_filter_mode: Mapped[str] = mapped_column(String, default="include")  # "include" | "exclude"
+    gsc_query_filter_regex: Mapped[str | None] = mapped_column(String, nullable=True)
+    gsc_query_filter_mode: Mapped[str] = mapped_column(String, default="include")  # "include" | "exclude"
+    # GA4 has no query dimension (that's a GSC/search concept) -- page-only filter, same
+    # "scope to (or away from) a specific URL path" idea, useful when a campaign only
+    # covers one folder/section of the site.
+    ga4_page_filter_regex: Mapped[str | None] = mapped_column(String, nullable=True)
+    ga4_page_filter_mode: Mapped[str] = mapped_column(String, default="include")  # "include" | "exclude"
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=_utcnow)
+
+    campaigns: Mapped[list["Campaign"]] = relationship(back_populates="site", cascade="all, delete-orphan")
+    benchmarks: Mapped[list["Benchmark"]] = relationship(back_populates="site", cascade="all, delete-orphan")
+    crawl_imports: Mapped[list["CrawlImport"]] = relationship(back_populates="site", cascade="all, delete-orphan")
+    tasks: Mapped[list["Task"]] = relationship(back_populates="site", cascade="all, delete-orphan")
+
+
+class Campaign(Base):
+    __tablename__ = "campaigns"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    site_id: Mapped[int] = mapped_column(ForeignKey("sites.id"))
+    start_date: Mapped[dt.date] = mapped_column(Date)
+    duration_months: Mapped[int] = mapped_column(Integer, default=6)
+    capacity_per_week: Mapped[int] = mapped_column(Integer, default=5)  # max tasks/week an analyst can pick up
+    content_pieces_per_month: Mapped[int | None] = mapped_column(Integer, nullable=True)  # package size, e.g. "8 blogs/mo"
+    pages_to_optimize_per_month: Mapped[int | None] = mapped_column(Integer, nullable=True)  # existing pages to improve/mo
+    # Some campaigns have no existing content worth optimizing at all -- lets the
+    # analyst redirect that same monthly count toward creating brand-new pages
+    # instead (see content_rules.py's generate_content_plan), rather than the
+    # quota just describing "existing pages" unconditionally. "optimize_existing"
+    # (default) keeps today's behavior.
+    page_work_mode: Mapped[str] = mapped_column(String, default="optimize_existing")  # "optimize_existing" | "create_new"
+    notes: Mapped[str | None] = mapped_column(String, nullable=True)  # anything else about the package/scope
+    default_assignee: Mapped[str | None] = mapped_column(String, nullable=True)  # pre-fills new tasks; reassignable per-task
+    # How the analyst wants to work the crawl-side technical backlog (404s, redirects,
+    # indexation-blocking, server errors): one consolidated "Technical Audit" task
+    # covering everything, or the existing per-category tasks. Defaults to consolidated
+    # -- most analysts would rather do one focused technical pass than juggle several
+    # separate crawl tickets, and it's the same "don't fragment into look-alike tasks"
+    # reasoning already applied to campaign-wide batching (see crawl_rules.py) -- just
+    # user-controlled instead of a fixed platform rule, since package/workflow shape is
+    # the analyst's call, not the platform's (see setup_campaign.html).
+    consolidate_technical_tasks: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    site: Mapped[Site] = relationship(back_populates="campaigns")
+
+
+class Connection(Base):
+    """Google OAuth connection for GSC/GA4 sync (phase 3-4)."""
+
+    __tablename__ = "connections"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    site_id: Mapped[int] = mapped_column(ForeignKey("sites.id"))
+    provider: Mapped[str] = mapped_column(String)  # "gsc" | "ga4"
+    access_token: Mapped[str] = mapped_column(String)
+    refresh_token: Mapped[str] = mapped_column(String)
+    expires_at: Mapped[dt.datetime] = mapped_column(DateTime)
+
+
+class Benchmark(Base):
+    """A configurable threshold for a metric, optionally segmented.
+
+    comparator: "lt" (flag when actual < target -> underperforming) or
+                "gt" (flag when actual > target -> overperforming/bad, e.g. exit rate)
+    segment: optional key like a CTR position-bucket ("1-3", "4-10", "11-20")
+             or a device type ("mobile"). Null/"" = applies site-wide.
+    """
+
+    __tablename__ = "benchmarks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    site_id: Mapped[int] = mapped_column(ForeignKey("sites.id"))
+    metric_key: Mapped[str] = mapped_column(String)  # e.g. "engagement_rate", "exit_rate", "ctr", "mobile_share"
+    segment: Mapped[str | None] = mapped_column(String, nullable=True)
+    comparator: Mapped[str] = mapped_column(String)  # "lt" | "gt"
+    target_value: Mapped[float] = mapped_column(Float)
+
+    site: Mapped[Site] = relationship(back_populates="benchmarks")
+
+
+class MetricSnapshot(Base):
+    """Monthly rollup of a GSC/GA4 metric per URL (or site-wide when url is null)."""
+
+    __tablename__ = "metric_snapshots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    site_id: Mapped[int] = mapped_column(ForeignKey("sites.id"))
+    source: Mapped[str] = mapped_column(String)  # "gsc" | "ga4"
+    url: Mapped[str | None] = mapped_column(String, nullable=True)
+    month: Mapped[dt.date] = mapped_column(Date)  # first-of-month
+    metric_key: Mapped[str] = mapped_column(String)
+    value: Mapped[float] = mapped_column(Float)
+    extra: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # e.g. {"position": 4.2} for CTR bucketing
+
+
+class CrawlImport(Base):
+    """One Screaming Frog export batch that's been ingested."""
+
+    __tablename__ = "crawl_imports"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    site_id: Mapped[int] = mapped_column(ForeignKey("sites.id"))
+    crawl_date: Mapped[dt.date] = mapped_column(Date)
+    source_folder: Mapped[str] = mapped_column(String)
+    imported_at: Mapped[dt.datetime] = mapped_column(DateTime, default=_utcnow)
+    issue_count: Mapped[int] = mapped_column(Integer, default=0)
+    total_urls: Mapped[int] = mapped_column(Integer, default=0)  # every crawled URL, not just issues
+    site_scale: Mapped[str] = mapped_column(String, default="small")  # "small" | "medium" | "large"
+
+    site: Mapped[Site] = relationship(back_populates="crawl_imports")
+    issues: Mapped[list["CrawlIssue"]] = relationship(back_populates="crawl_import", cascade="all, delete-orphan")
+
+
+class CrawlIssue(Base):
+    __tablename__ = "crawl_issues"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    site_id: Mapped[int] = mapped_column(ForeignKey("sites.id"))
+    crawl_import_id: Mapped[int] = mapped_column(ForeignKey("crawl_imports.id"))
+    issue_type: Mapped[str] = mapped_column(String)  # "404" | "301" | "302" | "5xx"
+    url: Mapped[str] = mapped_column(String)
+    status_code: Mapped[int] = mapped_column(Integer)
+    redirects_to: Mapped[str | None] = mapped_column(String, nullable=True)
+    inlinking_urls: Mapped[list] = mapped_column(JSON, default=list)  # pages that link to `url`
+
+    crawl_import: Mapped[CrawlImport] = relationship(back_populates="issues")
+
+
+class Task(Base):
+    __tablename__ = "tasks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    site_id: Mapped[int] = mapped_column(ForeignKey("sites.id"))
+    source: Mapped[str] = mapped_column(String)  # "crawl" | "gsc" | "ga4"
+    category: Mapped[str] = mapped_column(String)  # "404_fix" | "redirect_inlink_update" | "ctr_optimization" | ...
+    title: Mapped[str] = mapped_column(String)
+    description: Mapped[str] = mapped_column(String)
+    affected_urls: Mapped[list] = mapped_column(JSON, default=list)
+    # Per-URL extras the export needs but affected_urls (a flat list) can't carry:
+    # consolidated technical_audit tasks key each url to {"category":, "severity":}
+    # (its original sub-issue, lost when consolidate_technical_tasks flattens them
+    # into one list); batched GSC/GA4 tasks key each url to {"metric": <actual value>}
+    # (its own per-page number, lost when several per-page tasks collapse into one).
+    # Empty {} for every task that isn't consolidated/batched -- exports fall back to
+    # the task-level category/severity/metric_actual exactly as before.
+    url_details: Mapped[dict] = mapped_column(JSON, default=dict)
+    severity: Mapped[str] = mapped_column(String)  # "high" | "medium" | "low"
+    metric_actual: Mapped[float | None] = mapped_column(Float, nullable=True)
+    metric_benchmark: Mapped[float | None] = mapped_column(Float, nullable=True)
+    month_index: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 0-based month within campaign
+    target_date: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
+    status: Mapped[str] = mapped_column(String, default="todo")  # "todo" | "in_progress" | "done"
+    effort_tier: Mapped[str] = mapped_column(String, default="medium")  # "low" | "medium" | "high"
+    assignee: Mapped[str | None] = mapped_column(String, nullable=True)  # who performs this task
+    # Analyst-facing priority framing -- "benchmarking" | "key_fix" | "quick_win" |
+    # "ongoing_content" (see app/rules/optimization_levels.py). Set to a sensible
+    # default when the task is generated, but always freely editable afterward -- this
+    # is a classification the analyst owns, not a fixed platform rule (same "package
+    # shape is the analyst's call" reasoning as Campaign.consolidate_technical_tasks).
+    optimization_level: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=_utcnow)
+
+    site: Mapped[Site] = relationship(back_populates="tasks")
+
+
+class ChatMessage(Base):
+    """One turn of the plan-editing chat, per site. `role` is "user" or "assistant";
+    tool calls/results the assistant made along the way are logged in `actions_summary`
+    (plain-English, e.g. "moved 2 tasks to March") so the analyst can see what changed
+    without reading raw tool-call JSON.
+    """
+
+    __tablename__ = "chat_messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    site_id: Mapped[int] = mapped_column(ForeignKey("sites.id"))
+    role: Mapped[str] = mapped_column(String)  # "user" | "assistant"
+    content: Mapped[str] = mapped_column(String)
+    actions_summary: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=_utcnow)

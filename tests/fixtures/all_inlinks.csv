@@ -1,0 +1,9 @@
+Type,Source,Destination,Status Code
+AHREF,https://example.com/blog/index,https://example.com/old-guide,404
+AHREF,https://example.com/resources,https://example.com/old-guide,404
+AHREF,https://example.com/home,https://example.com/old-product,301
+AHREF,https://example.com/category,https://example.com/old-product,301
+AHREF,https://example.com/footer,https://example.com/old-product,301
+AHREF,https://example.com/sitemap-page,https://example.com/old-product,301
+AHREF,https://example.com/related,https://example.com/old-product,301
+AHREF,https://example.com/app,https://example.com/broken-api,500

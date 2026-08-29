@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}{{ site.domain }} — Calendar{% endblock %}
+{% block content %}
+  <div class="calendar-toolbar">
+    <h1>Task Calendar</h1>
+    <div class="calendar-toolbar-actions">
+      <a class="button secondary" href="/sites/{{ site.id }}/tasks">List view</a>
+      <a class="button secondary" href="/sites/{{ site.id }}/tasks/calendar.pdf">Download PDF →</a>
+      <a class="button secondary" href="/sites/{{ site.id }}/tasks/calendar.xlsx">Download Excel →</a>
+    </div>
+  </div>
+
+  <form method="get" class="filter-bar">
+    <select name="assignee" onchange="this.form.submit()">
+      <option value="">Everyone's calendar</option>
+      <option value="none" {{ "selected" if filters.assignee == "none" else "" }}>Unassigned</option>
+      {% for name in all_assignees %}
+        <option value="{{ name }}" {{ "selected" if filters.assignee == name else "" }}>{{ name }}'s calendar</option>
+      {% endfor %}
+    </select>
+  </form>
+
+  {% if not campaign %}
+    <p class="muted">No campaign set up yet — <a href="/sites/{{ site.id }}/setup/campaign">add campaign details</a> to see the full calendar.</p>
+  {% else %}
+    <p class="muted">
+      {{ campaign.duration_months }}-month campaign, {{ campaign.start_date }} onward. Every task lands on the
+      day it's scheduled, with who's doing it.
+    </p>
+    {% if span_months and span_months > campaign.duration_months %}
+      <p class="error">
+        The scheduled backlog needs {{ span_months }} months at {{ campaign.capacity_per_week }} tasks/week —
+        more than the {{ campaign.duration_months }}-month campaign configured in
+        <a href="/sites/{{ site.id }}/setup/campaign">Campaign &amp; Package</a>. Showing all {{ span_months }}
+        months below so nothing scheduled is hidden; raise capacity or campaign length to bring this back in line.
+      </p>
+    {% endif %}
+    {% if campaign.content_pieces_per_month or campaign.pages_to_optimize_per_month %}
+      <form method="post" action="/sites/{{ site.id }}/tasks/generate-content-plan" style="margin-bottom: 14px;">
+        <button type="submit" class="secondary">(Re)generate content &amp; growth plan for all months →</button>
+      </form>
+    {% endif %}
+
+    {% for month in months %}
+      <section class="card month-calendar-card">
+        <h2>{{ month.label }}</h2>
+        <table class="month-calendar">
+          <thead>
+            <tr>{% for d in ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"] %}<th>{{ d }}</th>{% endfor %}</tr>
+          </thead>
+          <tbody>
+            {% for week in month.weeks %}
+            <tr>
+              {% for cell in week %}
+              <td class="{{ '' if cell.in_month else 'out-of-month' }} {{ 'is-today' if cell.date == today else '' }}">
+                <div class="cal-day-num">{{ cell.date.day }}</div>
+                {% for t in cell.tasks[:3] %}
+                  {% set opt_class = "opt-" ~ t.optimization_level if t.optimization_level else "severity-" ~ t.severity %}
+                  {% set opt_label = optimization_level_labels[t.optimization_level] if t.optimization_level else (t.severity ~ " severity") %}
+                  {% set mechanism = populated_by.get(t.category) %}
+                  <div class="cal-task {{ opt_class }}"
+                       title="{{ t.title }} — {{ opt_label }}{{ ' (' ~ mechanism ~ ')' if mechanism else '' }}{{ ' · ' ~ t.assignee if t.assignee else '' }}">
+                    <div class="cal-task-title">{{ t.title }}</div>
+                    <div class="cal-task-meta">{{ opt_label }} · {{ t.assignee or "Unassigned" }}</div>
+                  </div>
+                {% endfor %}
+                {% if cell.tasks|length > 3 %}
+                  <div class="cal-task-more">+{{ cell.tasks|length - 3 }} more</div>
+                {% endif %}
+              </td>
+              {% endfor %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </section>
+    {% endfor %}
+  {% endif %}
+{% endblock %}
