@@ -2,7 +2,7 @@ import datetime as dt
 
 import httpx
 
-from app.ingestion.ga4_sync import fetch_mobile_share, fetch_page_metrics
+from app.ingestion.ga4_sync import fetch_ga4_properties, fetch_mobile_share, fetch_page_metrics
 
 
 class _FakeResponse:
@@ -98,3 +98,41 @@ def test_fetch_mobile_share_omits_pages_with_zero_total_sessions(monkeypatch):
     monkeypatch.setattr(httpx, "post", fake_post)
     shares = fetch_mobile_share("token", "123", dt.date(2026, 7, 1), dt.date(2026, 7, 28))
     assert shares == {}
+
+
+# ---------- fetch_ga4_properties (see routers/setup.py's property picker) ----------
+
+
+def test_fetch_ga4_properties_flattens_accounts_and_strips_the_properties_prefix(monkeypatch):
+    captured = {}
+
+    def fake_get(url, headers, params, timeout):
+        captured["url"] = url
+        captured["headers"] = headers
+        return _FakeResponse({
+            "accountSummaries": [
+                {
+                    "displayName": "Acme Inc",
+                    "propertySummaries": [
+                        {"property": "properties/242923674", "displayName": "acme.com"},
+                        {"property": "properties/320230386", "displayName": "acme blog"},
+                    ],
+                },
+                {"displayName": "Other Account", "propertySummaries": [{"property": "properties/999", "displayName": "other.com"}]},
+            ]
+        })
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    properties = fetch_ga4_properties("some-token")
+    assert properties == [
+        {"property_id": "242923674", "display_name": "acme.com", "account_name": "Acme Inc"},
+        {"property_id": "320230386", "display_name": "acme blog", "account_name": "Acme Inc"},
+        {"property_id": "999", "display_name": "other.com", "account_name": "Other Account"},
+    ]
+    assert captured["url"] == "https://analyticsadmin.googleapis.com/v1beta/accountSummaries"
+    assert captured["headers"] == {"Authorization": "Bearer some-token"}
+
+
+def test_fetch_ga4_properties_returns_empty_list_when_no_accounts(monkeypatch):
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: _FakeResponse({}))
+    assert fetch_ga4_properties("token") == []

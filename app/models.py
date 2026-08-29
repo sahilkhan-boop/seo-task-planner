@@ -28,24 +28,33 @@ class Site(Base):
     gsc_site_url: Mapped[str | None] = mapped_column(String, nullable=True)
     ga4_property_id: Mapped[str | None] = mapped_column(String, nullable=True)
     brand_terms: Mapped[str | None] = mapped_column(String, nullable=True)  # comma-separated, for non-branded query detection
-    # Optional regex alternative to brand_terms' plain substring matching -- for a
-    # brand name with real-world spelling variants/misspellings a comma-separated
-    # term list can't cover well (apostrophe/hyphen variants, common misspellings,
-    # sub-brand names, the bare domain). When set, this takes priority over
-    # brand_terms for branded-query classification (see gsc_rules.py's
-    # is_branded_query); invalid regex is ignored the same way the GSC/GA4 filter
-    # regexes already are (see apply_gsc_filters), never crashes a sync.
+    # The site's one query-level regex -- an optional regex alternative to
+    # brand_terms' plain substring matching, for a brand name with real-world
+    # spelling variants/misspellings a comma-separated term list can't cover well
+    # (apostrophe/hyphen variants, common misspellings, sub-brand names, the bare
+    # domain). When set, this takes priority over brand_terms for branded-query
+    # classification (see gsc_rules.py's is_branded_query); invalid regex is
+    # ignored the same way the GSC/GA4 page-filter regexes already are (see
+    # apply_gsc_filters), never crashes a sync.
+    #
+    # Used to be two separate fields -- this one, plus a gsc_query_filter_regex
+    # that instead REMOVED matching queries from the data before the rule engine
+    # ever saw them (an include/exclude scoping filter, not a classification).
+    # Merged into just this one (2026-08-29): the two purposes actively conflicted
+    # for any site using both (an "exclude" filter on this same pattern would have
+    # deleted every branded query before classification could ever see them), and
+    # in practice no real site had ever used the filtering behavior at all --
+    # brand_regex is the one every real site actually depends on.
     brand_regex: Mapped[str | None] = mapped_column(String, nullable=True)
-    # GSC-report-style regex filters (same idea as Search Console's own Performance
-    # report page/query filters) -- optional, applied before the GSC rule engine sees
-    # the data at all, so an analyst can scope task generation to (or away from) a
-    # specific URL path or query pattern without touching code. Invalid regex is
-    # ignored rather than erroring the whole sync -- see app/services.py's
-    # _apply_gsc_filters.
+    # GSC-report-style regex filter (same idea as Search Console's own Performance
+    # report page filter) -- optional, applied before the GSC rule engine sees the
+    # data at all, so an analyst can scope task generation to (or away from) a
+    # specific URL path without touching code. Invalid regex is ignored rather
+    # than erroring the whole sync -- see app/services.py's apply_gsc_filters.
+    # Query-level filtering doesn't have an equivalent -- see brand_regex's own
+    # comment for why that got merged away instead of kept alongside this one.
     gsc_page_filter_regex: Mapped[str | None] = mapped_column(String, nullable=True)
     gsc_page_filter_mode: Mapped[str] = mapped_column(String, default="include")  # "include" | "exclude"
-    gsc_query_filter_regex: Mapped[str | None] = mapped_column(String, nullable=True)
-    gsc_query_filter_mode: Mapped[str] = mapped_column(String, default="include")  # "include" | "exclude"
     # GA4 has no query dimension (that's a GSC/search concept) -- page-only filter, same
     # "scope to (or away from) a specific URL path" idea, useful when a campaign only
     # covers one folder/section of the site.

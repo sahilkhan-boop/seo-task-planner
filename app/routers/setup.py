@@ -14,7 +14,9 @@ from sqlalchemy.orm import Session
 
 from app import config
 from app.db import get_db
-from app.google_oauth import build_auth_url
+from app.google_oauth import build_auth_url, get_valid_access_token
+from app.ingestion.ga4_sync import fetch_ga4_properties
+from app.ingestion.gsc_sync import fetch_gsc_properties
 from app.models import Campaign, Connection, CrawlImport, Site
 from app.templating import templates
 
@@ -47,6 +49,55 @@ def connect_step(site_id: int, request: Request, db: Session = Depends(get_db), 
     )
 
 
+@router.get("/sites/{site_id}/setup/connect/select-property")
+def select_property_page(site_id: int, request: Request, provider: str, db: Session = Depends(get_db)):
+    """Shown right after a successful GSC/GA4 OAuth connect (see google_auth.py's
+    oauth_callback) -- lists the real properties this Google account can actually
+    access, instead of asking the analyst to hand-type an exact property URL/ID.
+    See app/ingestion/gsc_sync.py's fetch_gsc_properties for why the old
+    hand-typed-field approach was a real reliability gap: OAuth succeeding and the
+    property actually being configured were two disconnected manual steps, and it
+    was easy to think you were done after just the first one -- exactly what
+    happened to two real sites (Mews, Accuquote) before this existed. Falls back to
+    a manual text field (same as before) if the API call itself fails for any
+    reason (permission issue, network blip, etc.) -- never a dead end."""
+    site = db.get(Site, site_id)
+    connection = db.scalars(
+        select(Connection).where(Connection.site_id == site_id, Connection.provider == provider)
+    ).first()
+    properties: list[dict] = []
+    fetch_error = None
+    if not connection:
+        fetch_error = f"No {provider.upper()} connection found for this site yet."
+    else:
+        try:
+            token = get_valid_access_token(connection)
+            db.commit()
+            properties = fetch_gsc_properties(token) if provider == "gsc" else fetch_ga4_properties(token)
+        except Exception as exc:  # noqa: BLE001 -- any API/network failure just falls back to manual entry
+            fetch_error = str(exc)
+    return templates.TemplateResponse(
+        request,
+        "select_property.html",
+        {
+            "site": site, "provider": provider, "properties": properties, "fetch_error": fetch_error,
+            "current_value": site.gsc_site_url if provider == "gsc" else site.ga4_property_id,
+        },
+    )
+
+
+@router.post("/sites/{site_id}/setup/connect/select-property")
+def save_selected_property(site_id: int, provider: str = Form(...), value: str = Form(...), db: Session = Depends(get_db)):
+    site = db.get(Site, site_id)
+    if provider == "gsc":
+        site.gsc_site_url = value.strip() or None
+    else:
+        site.ga4_property_id = value.strip() or None
+    db.commit()
+    next_step = "/setup/campaign" if provider == "gsc" else "/settings"
+    return RedirectResponse(url=f"/sites/{site_id}{next_step}", status_code=303)
+
+
 def _save_connect_fields(
     site: Site,
     gsc_site_url: str,
@@ -55,8 +106,6 @@ def _save_connect_fields(
     brand_regex: str,
     gsc_page_filter_regex: str,
     gsc_page_filter_mode: str,
-    gsc_query_filter_regex: str,
-    gsc_query_filter_mode: str,
     ga4_page_filter_regex: str,
     ga4_page_filter_mode: str,
 ) -> None:
@@ -69,8 +118,6 @@ def _save_connect_fields(
     site.brand_regex = brand_regex.strip() or None
     site.gsc_page_filter_regex = gsc_page_filter_regex.strip() or None
     site.gsc_page_filter_mode = gsc_page_filter_mode if gsc_page_filter_mode == "exclude" else "include"
-    site.gsc_query_filter_regex = gsc_query_filter_regex.strip() or None
-    site.gsc_query_filter_mode = gsc_query_filter_mode if gsc_query_filter_mode == "exclude" else "include"
     site.ga4_page_filter_regex = ga4_page_filter_regex.strip() or None
     site.ga4_page_filter_mode = ga4_page_filter_mode if ga4_page_filter_mode == "exclude" else "include"
 
@@ -84,8 +131,6 @@ def save_connect_step(
     brand_regex: str = Form(""),
     gsc_page_filter_regex: str = Form(""),
     gsc_page_filter_mode: str = Form("include"),
-    gsc_query_filter_regex: str = Form(""),
-    gsc_query_filter_mode: str = Form("include"),
     ga4_page_filter_regex: str = Form(""),
     ga4_page_filter_mode: str = Form("include"),
     db: Session = Depends(get_db),
@@ -93,7 +138,7 @@ def save_connect_step(
     site = db.get(Site, site_id)
     _save_connect_fields(
         site, gsc_site_url, ga4_property_id, brand_terms, brand_regex, gsc_page_filter_regex, gsc_page_filter_mode,
-        gsc_query_filter_regex, gsc_query_filter_mode, ga4_page_filter_regex, ga4_page_filter_mode,
+        ga4_page_filter_regex, ga4_page_filter_mode,
     )
     db.commit()
     return RedirectResponse(url=f"/sites/{site_id}/setup/campaign", status_code=303)
@@ -108,8 +153,6 @@ def save_connect_step_and_start_oauth(
     brand_regex: str = Form(""),
     gsc_page_filter_regex: str = Form(""),
     gsc_page_filter_mode: str = Form("include"),
-    gsc_query_filter_regex: str = Form(""),
-    gsc_query_filter_mode: str = Form("include"),
     ga4_page_filter_regex: str = Form(""),
     ga4_page_filter_mode: str = Form("include"),
     db: Session = Depends(get_db),
@@ -120,7 +163,7 @@ def save_connect_step_and_start_oauth(
     site = db.get(Site, site_id)
     _save_connect_fields(
         site, gsc_site_url, ga4_property_id, brand_terms, brand_regex, gsc_page_filter_regex, gsc_page_filter_mode,
-        gsc_query_filter_regex, gsc_query_filter_mode, ga4_page_filter_regex, ga4_page_filter_mode,
+        ga4_page_filter_regex, ga4_page_filter_mode,
     )
     db.commit()
 
@@ -141,8 +184,6 @@ def save_connect_step_and_start_oauth_ga4(
     brand_regex: str = Form(""),
     gsc_page_filter_regex: str = Form(""),
     gsc_page_filter_mode: str = Form("include"),
-    gsc_query_filter_regex: str = Form(""),
-    gsc_query_filter_mode: str = Form("include"),
     ga4_page_filter_regex: str = Form(""),
     ga4_page_filter_mode: str = Form("include"),
     db: Session = Depends(get_db),
@@ -153,7 +194,7 @@ def save_connect_step_and_start_oauth_ga4(
     site = db.get(Site, site_id)
     _save_connect_fields(
         site, gsc_site_url, ga4_property_id, brand_terms, brand_regex, gsc_page_filter_regex, gsc_page_filter_mode,
-        gsc_query_filter_regex, gsc_query_filter_mode, ga4_page_filter_regex, ga4_page_filter_mode,
+        ga4_page_filter_regex, ga4_page_filter_mode,
     )
     db.commit()
 

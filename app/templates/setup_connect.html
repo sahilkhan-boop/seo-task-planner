@@ -55,8 +55,9 @@
       </p>
 
       <p class="muted" style="margin-top: 14px; font-size: 0.82rem;">
-        Optional -- same idea as Search Console's own Performance-report filters. Scope task
-        generation to (or away from) a specific URL path or query pattern, entirely optional.
+        Optional -- same idea as Search Console's own Performance-report page filter. Scope task
+        generation to (or away from) a specific URL path, entirely optional. (No separate query
+        filter here -- that's what Brand regex above is for.)
       </p>
       <div class="form-grid">
         <label>Page filter (regex)
@@ -67,16 +68,6 @@
           <select name="gsc_page_filter_mode">
             <option value="include" {{ "selected" if site.gsc_page_filter_mode != "exclude" else "" }}>Include matches</option>
             <option value="exclude" {{ "selected" if site.gsc_page_filter_mode == "exclude" else "" }}>Exclude matches</option>
-          </select>
-        </label>
-        <label>Query filter (regex)
-          <input type="text" name="gsc_query_filter_regex" placeholder="e.g. ^how to"
-                 value="{{ site.gsc_query_filter_regex or '' }}" />
-        </label>
-        <label>Query filter mode
-          <select name="gsc_query_filter_mode">
-            <option value="include" {{ "selected" if site.gsc_query_filter_mode != "exclude" else "" }}>Include matches</option>
-            <option value="exclude" {{ "selected" if site.gsc_query_filter_mode == "exclude" else "" }}>Exclude matches</option>
           </select>
         </label>
       </div>

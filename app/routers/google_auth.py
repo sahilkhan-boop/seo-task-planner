@@ -104,5 +104,10 @@ def oauth_callback(
         )
     db.commit()
 
-    next_step = "/setup/campaign" if provider == "gsc" else "/settings"
-    return RedirectResponse(url=f"/sites/{site_id}{next_step}", status_code=303)
+    # Land on the real property pick-list (routers/setup.py's select_property_page)
+    # rather than jumping straight to the next setup step -- OAuth succeeding and
+    # the actual property being configured used to be two disconnected manual
+    # actions (see that route's own docstring for the real sites this broke).
+    return RedirectResponse(
+        url=f"/sites/{site_id}/setup/connect/select-property?provider={provider}", status_code=303
+    )

@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}{{ site.domain }} — Select {{ "GSC" if provider == "gsc" else "GA4" }} Property{% endblock %}
+{% block content %}
+  <h1>Select the {{ "Search Console" if provider == "gsc" else "GA4" }} property</h1>
+  <p class="muted">
+    Connected to Google successfully. Pick which {{ "Search Console property" if provider == "gsc" else "GA4 property" }}
+    this account can access is the right one for {{ site.domain }}.
+  </p>
+
+  {% if fetch_error %}
+    <p class="error">Couldn't fetch the real property list: {{ fetch_error }}. You can still enter it manually below.</p>
+  {% elif not properties %}
+    <p class="muted">No {{ "Search Console properties" if provider == "gsc" else "GA4 properties" }} found for this
+      Google account -- enter it manually below, or check that the right account was used to connect.</p>
+  {% endif %}
+
+  <section class="card">
+    {% if properties %}
+      <form method="post" action="/sites/{{ site.id }}/setup/connect/select-property" class="form-grid">
+        <input type="hidden" name="provider" value="{{ provider }}" />
+        {% for p in properties %}
+          <label style="flex-direction: row; align-items: center; gap: 8px;">
+            <input type="radio" name="value"
+                   value="{{ p.site_url if provider == 'gsc' else p.property_id }}"
+                   {{ "checked" if (p.site_url if provider == 'gsc' else p.property_id) == current_value else "" }} />
+            {% if provider == "gsc" %}
+              {{ p.site_url }} <span class="muted">({{ p.permission_level }})</span>
+            {% else %}
+              {{ p.display_name }} <span class="muted">({{ p.account_name }} · {{ p.property_id }})</span>
+            {% endif %}
+          </label>
+        {% endfor %}
+        <button type="submit">Use selected property →</button>
+      </form>
+    {% endif %}
+
+    <details style="margin-top: {{ '18px' if properties else '0' }};">
+      <summary>{{ "Enter manually instead" if properties else "Enter manually" }}</summary>
+      <form method="post" action="/sites/{{ site.id }}/setup/connect/select-property" class="form-grid" style="margin-top: 10px;">
+        <input type="hidden" name="provider" value="{{ provider }}" />
+        <label>{{ "GSC property URL" if provider == "gsc" else "GA4 property ID" }}
+          <input type="text" name="value" value="{{ current_value or '' }}"
+                 placeholder="{{ 'https://example.com/' if provider == 'gsc' else '123456789' }}" />
+        </label>
+        <button type="submit" class="secondary">Save →</button>
+      </form>
+    </details>
+  </section>
+{% endblock %}

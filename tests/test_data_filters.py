@@ -1,7 +1,11 @@
-"""GSC-report-style regex filters (Site.gsc_page_filter_regex/gsc_query_filter_regex/
-ga4_page_filter_regex) -- optional, analyst-set scoping applied before the rule
-engines ever see the data. Tested as pure functions against a plain Site instance,
-no DB session needed."""
+"""GSC-report-style regex filters (Site.gsc_page_filter_regex/ga4_page_filter_regex)
+-- optional, analyst-set scoping applied before the rule engines ever see the data.
+Tested as pure functions against a plain Site instance, no DB session needed.
+
+There used to be a query-level filter here too (gsc_query_filter_regex) --
+merged into Site.brand_regex instead (see its own comment in app/models.py):
+in practice no real site ever used it, and it actively conflicted with brand/
+non-branded classification for the one that used brand_regex for real."""
 from app.models import Site
 from app.services import apply_ga4_filters, apply_gsc_filters
 
@@ -41,19 +45,6 @@ def test_page_exclude_filter_drops_matching_pages():
     site = _site(gsc_page_filter_regex=r"/blog/", gsc_page_filter_mode="exclude")
     pages, _ = apply_gsc_filters(site, PAGE_ROWS, QUERY_ROWS)
     assert [p["page"] for p in pages] == ["https://example.com/products/a"]
-
-
-def test_query_include_filter_scopes_queries_without_touching_pages():
-    site = _site(gsc_query_filter_regex=r"^how to", gsc_query_filter_mode="include")
-    pages, queries = apply_gsc_filters(site, PAGE_ROWS, QUERY_ROWS)
-    assert pages == PAGE_ROWS  # page rows untouched by a query-only filter
-    assert [q["query"] for q in queries] == ["how to buy"]
-
-
-def test_query_exclude_filter():
-    site = _site(gsc_query_filter_regex=r"^how to", gsc_query_filter_mode="exclude")
-    _, queries = apply_gsc_filters(site, PAGE_ROWS, QUERY_ROWS)
-    assert [q["query"] for q in queries] == ["what is x"]
 
 
 def test_invalid_regex_is_ignored_not_a_crash():

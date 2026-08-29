@@ -10,6 +10,23 @@ from urllib.parse import quote
 import httpx
 
 SEARCH_ANALYTICS_URL_TEMPLATE = "https://www.googleapis.com/webmasters/v3/sites/{site_url}/searchAnalytics/query"
+SITES_LIST_URL = "https://www.googleapis.com/webmasters/v3/sites"
+
+
+def fetch_gsc_properties(access_token: str) -> list[dict]:
+    """Every Search Console property this OAuth connection's Google account can
+    actually access -- {"site_url":, "permission_level":}. Lets the setup flow show
+    a real pick-list instead of asking the analyst to hand-type an exact property
+    URL (see routers/setup.py's select_gsc_property) -- the #1 way that field ended
+    up blank/wrong for real sites (Mews, Accuquote) despite the OAuth connection
+    itself succeeding: the connect step and "which exact property" were two
+    disconnected manual actions."""
+    resp = httpx.get(SITES_LIST_URL, headers={"Authorization": f"Bearer {access_token}"}, timeout=15)
+    resp.raise_for_status()
+    return [
+        {"site_url": entry["siteUrl"], "permission_level": entry.get("permissionLevel", "")}
+        for entry in resp.json().get("siteEntry", [])
+    ]
 
 
 def fetch_page_analytics(

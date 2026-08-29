@@ -20,8 +20,37 @@ import datetime as dt
 import httpx
 
 RUN_REPORT_URL_TEMPLATE = "https://analyticsdata.googleapis.com/v1beta/properties/{property_id}:runReport"
+ACCOUNT_SUMMARIES_URL = "https://analyticsadmin.googleapis.com/v1beta/accountSummaries"
 
 PAGE_METRICS = ["sessions", "activeUsers", "engagementRate", "bounceRate", "keyEvents"]
+
+
+def fetch_ga4_properties(access_token: str) -> list[dict]:
+    """Every GA4 property this OAuth connection's Google account can actually
+    access, across every account it belongs to -- {"property_id":, "display_name":,
+    "account_name":}. Same reasoning as gsc_sync.fetch_gsc_properties: lets the
+    setup flow show a real pick-list instead of asking the analyst to hand-type an
+    exact numeric property ID. Admin API accountSummaries -- a read-only listing
+    endpoint, covered by the same analytics.readonly scope already used for the
+    Data API report calls, no extra scope/consent needed."""
+    resp = httpx.get(
+        ACCOUNT_SUMMARIES_URL, headers={"Authorization": f"Bearer {access_token}"}, params={"pageSize": 200},
+        timeout=15,
+    )
+    resp.raise_for_status()
+    properties = []
+    for account in resp.json().get("accountSummaries", []):
+        for prop in account.get("propertySummaries", []):
+            # "property" is "properties/{id}" -- fetch_page_metrics/RUN_REPORT_URL_TEMPLATE
+            # want just the bare numeric id, same shape Site.ga4_property_id already stores.
+            property_id = prop.get("property", "").removeprefix("properties/")
+            if property_id:
+                properties.append({
+                    "property_id": property_id,
+                    "display_name": prop.get("displayName", property_id),
+                    "account_name": account.get("displayName", ""),
+                })
+    return properties
 
 
 def _run_report(access_token: str, property_id: str, body: dict) -> dict:

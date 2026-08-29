@@ -664,15 +664,21 @@ def _compile_filter(pattern: str | None) -> re.Pattern | None:
 def apply_gsc_filters(
     site: Site, page_rows: list[dict], query_rows: list[dict]
 ) -> tuple[list[dict], list[dict]]:
-    """Same idea as Search Console's own Performance-report page/query regex filters
-    (Site.gsc_page_filter_regex/gsc_query_filter_regex, set in the Connect step) --
-    lets an analyst scope task generation to (mode="include") or away from
-    (mode="exclude") a specific URL path or query pattern, entirely optionally.
-    Applied before the GSC rule engine ever sees the data, so it affects which pages/
-    queries can generate tasks at all, not just which ones get displayed.
+    """Same idea as Search Console's own Performance-report page regex filter
+    (Site.gsc_page_filter_regex, set in the Connect step) -- lets an analyst scope
+    task generation to (mode="include") or away from (mode="exclude") a specific
+    URL path, entirely optionally. Applied before the GSC rule engine ever sees the
+    data, so it affects which pages can generate tasks at all, not just which ones
+    get displayed.
 
-    Page filtering also drops non-matching rows from query_rows (by page), since a
-    page tier-2's query list wouldn't make sense for a page the page-filter excluded.
+    Also drops non-matching rows from query_rows (by page), since a page tier-2's
+    query list wouldn't make sense for a page the page-filter excluded.
+
+    No query-level equivalent -- there used to be one (gsc_query_filter_regex),
+    merged into Site.brand_regex instead (see its own comment on why): an
+    "exclude" filter here would have run BEFORE gsc_rules.py's branded/non-branded
+    classification ever saw the data, silently deleting the exact queries that
+    classification needs to see.
     """
     page_pattern = _compile_filter(site.gsc_page_filter_regex)
     if page_pattern:
@@ -681,12 +687,6 @@ def apply_gsc_filters(
         page_rows = [r for r in page_rows if keep(r["page"])]
         kept_pages = {r["page"] for r in page_rows}
         query_rows = [r for r in query_rows if r["page"] in kept_pages]
-
-    query_pattern = _compile_filter(site.gsc_query_filter_regex)
-    if query_pattern:
-        keep = (lambda q: bool(query_pattern.search(q))) if site.gsc_query_filter_mode == "include" \
-            else (lambda q: not query_pattern.search(q))
-        query_rows = [r for r in query_rows if keep(r["query"])]
 
     return page_rows, query_rows
 

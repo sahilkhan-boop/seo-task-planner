@@ -2,7 +2,7 @@ import datetime as dt
 
 import httpx
 
-from app.ingestion.gsc_sync import fetch_page_analytics, fetch_page_query_analytics
+from app.ingestion.gsc_sync import fetch_gsc_properties, fetch_page_analytics, fetch_page_query_analytics
 
 
 class _FakeResponse:
@@ -91,3 +91,34 @@ def test_fetch_page_query_analytics_returns_empty_list_when_no_rows(monkeypatch)
     monkeypatch.setattr(httpx, "post", lambda *a, **k: _FakeResponse({}))
     rows = fetch_page_query_analytics("token", "https://example.com/", dt.date(2026, 7, 1), dt.date(2026, 7, 28))
     assert rows == []
+
+
+# ---------- fetch_gsc_properties (see routers/setup.py's property picker) ----------
+
+
+def test_fetch_gsc_properties_maps_site_entries(monkeypatch):
+    captured = {}
+
+    def fake_get(url, headers, timeout):
+        captured["url"] = url
+        captured["headers"] = headers
+        return _FakeResponse({
+            "siteEntry": [
+                {"siteUrl": "https://example.com/", "permissionLevel": "siteOwner"},
+                {"siteUrl": "sc-domain:example.com", "permissionLevel": "siteFullUser"},
+            ]
+        })
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    properties = fetch_gsc_properties("some-token")
+    assert properties == [
+        {"site_url": "https://example.com/", "permission_level": "siteOwner"},
+        {"site_url": "sc-domain:example.com", "permission_level": "siteFullUser"},
+    ]
+    assert captured["url"] == "https://www.googleapis.com/webmasters/v3/sites"
+    assert captured["headers"] == {"Authorization": "Bearer some-token"}
+
+
+def test_fetch_gsc_properties_returns_empty_list_when_none_accessible(monkeypatch):
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: _FakeResponse({}))
+    assert fetch_gsc_properties("token") == []
