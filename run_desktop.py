@@ -7,6 +7,14 @@ opens the default browser to it, so a teammate can just double-click the .exe.
 """
 from __future__ import annotations
 
+import os
+
+# Must be set before `app.config` first loads (below, via app.main) -- a single
+# person's own local copy has nothing shared to gatekeep, and no way to complete a
+# Google login at all without their own OAuth credentials configured. See
+# app/config.py's own comment on LOGIN_REQUIRED for the full reasoning.
+os.environ.setdefault("LOGIN_REQUIRED", "false")
+
 import threading
 import time
 import webbrowser

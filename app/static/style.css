@@ -113,6 +113,27 @@ h2 { font-size: 1.1rem; margin: 0 0 10px; }
 .site-nav a:hover { color: var(--fg); background: var(--card-bg); text-decoration: none; }
 .site-nav a.active { color: var(--accent); background: var(--accent-tint); font-weight: 600; }
 .site-name { margin-left: auto; color: var(--muted-2); font-size: 0.9rem; }
+/* margin-left:auto here too (not just on .site-name) -- on a page with no `site`
+   in context (the Sites list, /login) .site-name never renders, so this needs its
+   own push to the right edge; on a page that has both, two auto margins in the
+   same flex row just eat the space jointly, landing this right next to site-name
+   instead of fighting over it. */
+.session-user { margin-left: auto; color: var(--muted-2); font-size: 0.85rem; white-space: nowrap; }
+.session-user a { color: var(--muted-2); text-decoration: underline; }
+.session-user a:hover { color: var(--fg); }
+
+.login-card {
+  max-width: 380px;
+  margin: 80px auto 0;
+  padding: 32px;
+  text-align: center;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.login-card h1 { font-size: 1.4rem; margin-bottom: 8px; }
+.login-card p { margin-bottom: 16px; }
+.login-card .button { display: inline-block; }
 
 /* ---------- Cards ---------- */
 .card, .month-block {

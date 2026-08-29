@@ -18,6 +18,9 @@
       </nav>
       <span class="site-name">{{ site.domain }}</span>
     {% endif %}
+    {% if request.session.get('email') %}
+      <span class="session-user">{{ request.session['email'] }} · <a href="/logout">Log out</a></span>
+    {% endif %}
   </header>
   <main class="container">
     {% block content %}{% endblock %}

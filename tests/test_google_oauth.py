@@ -4,7 +4,7 @@ import httpx
 import pytest
 
 from app import config
-from app.google_oauth import build_auth_url, exchange_code_for_tokens, get_valid_access_token
+from app.google_oauth import build_auth_url, exchange_code_for_tokens, get_userinfo, get_valid_access_token
 
 
 class _FakeResponse:
@@ -87,3 +87,34 @@ def test_get_valid_access_token_refreshes_when_within_60s_of_expiry(monkeypatch)
     conn = _FakeConnection("about-to-expire", "old-rt", dt.datetime.utcnow() + dt.timedelta(seconds=30))
     token = get_valid_access_token(conn)
     assert token == "refreshed"
+
+
+# ---------- login flow (see routers/auth.py + routers/google_auth.py's _finish_login) ----------
+
+
+def test_build_auth_url_for_login_requests_only_identity_scope_no_offline_access(monkeypatch):
+    """Login only needs a one-time "who is this" check -- forcing Google's "offline
+    access" consent screen (needed for GSC/GA4, which re-fetch data long after) would
+    be a confusing, unnecessary extra prompt for a plain sign-in."""
+    monkeypatch.setattr(config, "GOOGLE_CLIENT_ID", "test-client-id")
+    monkeypatch.setattr(config, "GOOGLE_REDIRECT_URI", "http://localhost:8000/auth/google/callback")
+    url = build_auth_url("login", "login")
+    assert "state=login" in url
+    assert "openid" in url and "email" in url and "profile" in url
+    assert "access_type" not in url
+    assert "prompt=consent" not in url
+
+
+def test_get_userinfo_calls_userinfo_endpoint_with_bearer_token(monkeypatch):
+    captured = {}
+
+    def fake_get(url, headers, timeout):
+        captured["url"] = url
+        captured["headers"] = headers
+        return _FakeResponse({"email": "sahil@peppercontent.io", "email_verified": True, "name": "Sahil"})
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    info = get_userinfo("some-access-token")
+    assert info["email"] == "sahil@peppercontent.io"
+    assert captured["url"] == "https://www.googleapis.com/oauth2/v3/userinfo"
+    assert captured["headers"] == {"Authorization": "Bearer some-access-token"}

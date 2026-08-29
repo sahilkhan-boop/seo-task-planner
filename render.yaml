@@ -23,9 +23,15 @@ services:
         fromDatabase:
           name: seo-task-planner-db
           property: connectionString
+      # Render generates and stores this itself, once, and keeps it stable across
+      # future deploys -- signs the login session cookie (see app/main.py); nobody
+      # needs to know or type this value.
+      - key: SESSION_SECRET_KEY
+        generateValue: true
       # Fill these in during the Blueprint setup screen (or later, under the web
       # service's Environment tab). The app runs fine without them -- GSC/GA4 sync
-      # and the plan-editing chat just stay disabled until they're set.
+      # and the plan-editing chat just stay disabled until they're set. Sign-in
+      # itself needs GOOGLE_CLIENT_ID/SECRET/REDIRECT_URI at minimum.
       - key: GOOGLE_CLIENT_ID
         sync: false
       - key: GOOGLE_CLIENT_SECRET
@@ -33,4 +39,7 @@ services:
       - key: GOOGLE_REDIRECT_URI
         sync: false
       - key: ANTHROPIC_API_KEY
+        sync: false
+      # Optional -- defaults to peppercontent.io if left unset (see app/config.py).
+      - key: ALLOWED_EMAIL_DOMAIN
         sync: false
