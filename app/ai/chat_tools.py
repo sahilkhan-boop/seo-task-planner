@@ -17,6 +17,7 @@ import datetime as dt
 from sqlalchemy.orm import Session
 
 from app.models import Task
+from app.rules.task_hours import estimated_hours_for
 
 TOOLS = [
     {
@@ -137,10 +138,11 @@ def _create_task(db: Session, site_id: int, tool_input: dict, campaign_start_dat
         target_date = dt.date.fromisoformat(tool_input["target_date"])
         if campaign_start_date:
             month_index = _month_index(campaign_start_date, target_date)
+    category = tool_input.get("category", "custom")
     task = Task(
         site_id=site_id,
         source="chat",
-        category=tool_input.get("category", "custom"),
+        category=category,
         title=tool_input["title"],
         description=tool_input["description"],
         affected_urls=tool_input.get("affected_urls", []),
@@ -148,6 +150,11 @@ def _create_task(db: Session, site_id: int, tool_input: dict, campaign_start_dat
         optimization_level=tool_input.get("optimization_level"),
         target_date=target_date,
         month_index=month_index,
+        estimated_hours=estimated_hours_for(category),
+        # An explicit date given here is a deliberate placement (same reasoning as a
+        # manual drag on the Task Plan page) -- reschedule_all_tasks leaves it alone
+        # rather than re-deriving and silently moving it on its next run.
+        manually_scheduled=target_date is not None,
         assignee=tool_input.get("assignee"),
         status="todo",
     )
@@ -172,6 +179,7 @@ def _update_task(db: Session, site_id: int, tool_input: dict, campaign_start_dat
         task.target_date = dt.date.fromisoformat(tool_input["target_date"])
         if campaign_start_date:
             task.month_index = _month_index(campaign_start_date, task.target_date)
+        task.manually_scheduled = True
         changed_fields.append("target_date")
 
     db.commit()

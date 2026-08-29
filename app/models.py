@@ -195,6 +195,16 @@ class Task(Base):
     metric_benchmark: Mapped[float | None] = mapped_column(Float, nullable=True)
     month_index: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 0-based month within campaign
     target_date: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
+    # How much of a person's 8-hour day this task actually takes -- see
+    # app/rules/task_hours.py's HOURS_BY_CATEGORY (real, analyst-supplied numbers, not a
+    # guess) -- what services.reschedule_all_tasks packs each day's capacity against.
+    estimated_hours: Mapped[float] = mapped_column(Float, default=1.0)
+    # True once a human has moved this task's date by hand (see routers/tasks.py's
+    # due-date route) -- reschedule_all_tasks then leaves target_date/month_index alone
+    # on its next run instead of re-deriving and silently overwriting a deliberate
+    # choice, while still counting its hours against that day's capacity so autoscheduled
+    # work doesn't get packed on top of it past 8 hours.
+    manually_scheduled: Mapped[bool] = mapped_column(Boolean, default=False)
     status: Mapped[str] = mapped_column(String, default="todo")  # "todo" | "in_progress" | "done"
     effort_tier: Mapped[str] = mapped_column(String, default="medium")  # "low" | "medium" | "high"
     assignee: Mapped[str | None] = mapped_column(String, nullable=True)  # who performs this task

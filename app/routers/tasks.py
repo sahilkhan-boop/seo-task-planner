@@ -387,6 +387,10 @@ def update_task_due_date(
             campaign = _current_campaign(db, site_id)
             if campaign:
                 task.month_index = (new_date.year - campaign.start_date.year) * 12 + (new_date.month - campaign.start_date.month)
+            # A deliberate human choice -- reschedule_all_tasks leaves it alone on its
+            # next run (still counting its hours against that day's capacity) instead
+            # of silently re-deriving and overwriting it. See Task.manually_scheduled.
+            task.manually_scheduled = True
             db.commit()
     suffix = redirect_to if redirect_to.startswith("/") else f"/{redirect_to}"
     return RedirectResponse(url=f"/sites/{site_id}{suffix}", status_code=303)

@@ -46,12 +46,15 @@ def test_end_to_end_crawl_import_produces_scheduled_tasks(db_session):
     assert all(t.target_date is not None and t.target_date >= campaign.start_date for t in tasks)
 
     # Per the unified phase scheduler's fixed Key Fix order (see services.py's
-    # _KEY_FIX_ORDER): server_error < 404_fix < redirect_inlink_update, one per week,
+    # _KEY_FIX_ORDER): server_error, then 404_fix, then redirect_inlink_update,
     # regardless of each issue's individual severity -- the old per-severity tier
     # nuance (redirect cleanup could outrank a non-high-impact 404) was superseded by
     # the analyst's explicit phase ordering ("technical must be done, then the rest").
+    # Never-decreasing (<=), not strictly increasing (<): each is a cheap 1-hour task
+    # (see app/rules/task_hours.py), so several legitimately share one 8-hour day now
+    # under the capacity-based scheduler -- same day is fine, out-of-order isn't.
     by_category = {t.category: t.target_date for t in tasks}
-    assert by_category["server_error"] < by_category["404_fix"] < by_category["redirect_inlink_update"]
+    assert by_category["server_error"] <= by_category["404_fix"] <= by_category["redirect_inlink_update"]
 
 
 def test_import_without_campaign_still_schedules_from_today(db_session):
@@ -138,7 +141,14 @@ def test_benchmarking_task_is_seeded_once_and_never_duplicated_on_reimport(db_se
     assert benchmarking_after[0].status == "in_progress"  # untouched by the reimport
 
 
-def test_benchmarking_task_does_not_collide_with_the_crawl_task_on_the_same_day(db_session):
+def test_benchmarking_task_never_lands_after_the_crawl_tasks_it_precedes(db_session):
+    """Regression name changed from "...does_not_collide..." -- under the capacity-
+    based scheduler, benchmarking legitimately CAN share a day with technical_audit
+    now (3h + 3h = 6h, comfortably under the 8-hour cap -- see app/rules/task_hours.py),
+    which isn't a bug, it's the whole point of packing by hours instead of one task
+    per week. What must still hold: benchmarking (phase rank 0) never lands on a
+    LATER day than anything that comes after it in the hierarchy, and no day's total
+    hours exceed the daily cap."""
     site = Site(domain="example.com")
     db_session.add(site)
     db_session.flush()
@@ -148,8 +158,16 @@ def test_benchmarking_task_does_not_collide_with_the_crawl_task_on_the_same_day(
 
     run_crawl_import(db_session, site.id, FIXTURES, dt.date(2026, 8, 15))
     tasks = db_session.query(Task).filter(Task.site_id == site.id).all()
-    dates = [t.target_date for t in tasks]
-    assert len(dates) == len(set(dates))  # no two tasks landed on the same day
+
+    benchmarking = next(t for t in tasks if t.category == "prompt_keyword_benchmarking")
+    others = [t for t in tasks if t.category != "prompt_keyword_benchmarking" and t.target_date]
+    assert all(benchmarking.target_date <= t.target_date for t in others)
+
+    hours_by_day: dict = {}
+    for t in tasks:
+        if t.target_date:
+            hours_by_day[t.target_date] = hours_by_day.get(t.target_date, 0.0) + t.estimated_hours
+    assert all(total <= 8.0 for total in hours_by_day.values())
 
 
 def test_optimization_level_is_set_from_the_default_mapping(db_session):

@@ -22,8 +22,9 @@ from app.rules.ga4_rules import generate_ga4_tasks
 from app.rules.gsc_rules import generate_gsc_tasks
 from app.rules.optimization_levels import STANDING_TASK_CATEGORIES, default_optimization_level
 from app.rules.reporting_rules import generate_reporting_tasks
+from app.rules.task_hours import estimated_hours_for
 from app.scheduling.month_utils import add_months
-from app.scheduling.timeline import assign_schedule, nth_week_business_day
+from app.scheduling.timeline import assign_schedule
 
 
 def _dates_occupied_by_other_sources(db: Session, site_id: int, source: str) -> frozenset[dt.date]:
@@ -69,8 +70,9 @@ _KEY_FIX_ORDER = [
 ]
 _QUICK_WIN_ORDER = ["meta_tag_reoptimization", "high_exit_rate", "ctr_optimization", "anchor_optimization"]
 WEDNESDAY = 2
-THURSDAY = 3
-FRIDAY = 4
+# An 8-hour workday's total capacity -- see reschedule_all_tasks. Real, analyst-
+# supplied (Sahil, 2026-08-27), not a guess.
+DAILY_CAPACITY_HOURS = 8.0
 
 
 def _schedule_phase_for(task: Task) -> str:
@@ -106,47 +108,76 @@ def _month_index_for(anchor: dt.date, target_date: dt.date) -> int:
     return (target_date.year - anchor.year) * 12 + (target_date.month - anchor.month)
 
 
-def _week_slot_date(start_date: dt.date, week_index: int) -> dt.date:
-    """One deliverable slot per week -- the business day exactly `week_index` weeks
-    after start_date (see nth_week_business_day), nudged off Wednesday too (reserved
-    for Reporting -- see generate_reporting_tasks) if it lands there. Every
-    week_index lands on the exact same day-of-week as every other (a week is
-    exactly 7 days), so this nudge is a pure function of that shared weekday -- it
-    can never make two different week_index values collide with each other."""
-    d = nth_week_business_day(start_date, week_index)
-    if d.weekday() == WEDNESDAY:
-        d += dt.timedelta(days=1)
-    return d
+def _assign_next_available_slot(
+    task: Task, days: list[dt.date], day_hours: dict[dt.date, float], anchor: dt.date, start_idx: int
+) -> int:
+    """Places `task` on the earliest day at/after days[start_idx] with room left in its
+    DAILY_CAPACITY_HOURS budget, tracking the running total per day in `day_hours` as it
+    goes. A completely empty day (0 hours used yet) is always used regardless of how
+    big the task is -- a single task heavier than a full day's capacity would otherwise
+    get permanently stuck advancing forever, never actually landing anywhere. Returns
+    the index it landed on (or len(days) if the campaign window ran out first, in which
+    case target_date/month_index are left None -- next cycle's backlog, same as before
+    this was hour-based), so a caller walking several tasks in a fixed order can resume
+    searching forward from there instead of re-scanning from day 0 for every task."""
+    idx = start_idx
+    while idx < len(days) and day_hours.get(days[idx], 0.0) > 0.0 and day_hours[days[idx]] + task.estimated_hours > DAILY_CAPACITY_HOURS:
+        idx += 1
+    if idx >= len(days):
+        task.target_date = None
+        task.month_index = None
+        return idx
+    d = days[idx]
+    task.target_date = d
+    task.month_index = _month_index_for(anchor, d)
+    day_hours[d] = day_hours.get(d, 0.0) + task.estimated_hours
+    return idx
 
 
 def reschedule_all_tasks(db: Session, site_id: int) -> None:
     """Single unified scheduler across every source (crawl/gsc/ga4/content_plan) for
-    this site: exactly ONE task per week, straight through every phase of the
-    analyst's own hierarchy -- Research & Benchmarking -> Technical Audit -> (the
-    rest of) Key Fixes -> Quick Wins -> Ongoing Content -- bounded to the campaign's
-    configured duration_months. Nothing is compressed to fit more in, and nothing
-    spills past the deadline to fit it all in eventually: whatever doesn't fit in
-    that many weeks is simply left unscheduled (target_date=None) -- it becomes next
-    cycle's backlog once the campaign is renewed for another 6 months, rather than
-    overloading the analyst now or silently running the plan past its configured
-    length. This applies regardless of backlog size -- a big page_optimization
-    backlog (many pages left to optimize) doesn't get squeezed into more than one
-    task/week either; content still shows up weekly, just covering fewer pages
-    within this 6-month window than the full backlog contains.
+    this site: every business day is an 8-hour bucket (DAILY_CAPACITY_HOURS), filled in
+    order through every phase of the analyst's own hierarchy -- Research & Benchmarking
+    -> Technical Audit -> (the rest of) Key Fixes -> Quick Wins -> Ongoing Content --
+    each task consuming its own Task.estimated_hours (see app/rules/task_hours.py's
+    real, analyst-supplied numbers) until the day's full, then spilling to the next.
+    Bounded to the campaign's configured duration_months; whatever doesn't fit within
+    that window is left unscheduled (target_date=None) -- it becomes next cycle's
+    backlog once the campaign is renewed, rather than overloading the analyst now or
+    silently running the plan past its configured length.
+
+    This replaced a strict "one task per week" model (2026-08-27) -- multiple tasks can
+    now share a day, and a heavy day can push work to the next business day rather than
+    always exactly 7 days after the last one. Deliberately simple greedy packing, not
+    optimal bin-packing: tasks are placed in a fixed priority order and a day, once
+    passed over because the next task in line didn't fit, is never revisited even if a
+    later, smaller task would have -- same "simple explicit rule over guessing"
+    philosophy as the rest of this codebase's rule engines, and with real hours mostly
+    in the 0.75-4h range, the capacity gaps this leaves on the table are modest.
+
+    A task a human has explicitly moved (Task.manually_scheduled, set by the due-date
+    route/chat tool) is left exactly where it was put -- never re-derived or silently
+    overwritten by a later call -- but its hours still count against that day's
+    capacity, so autoscheduled work doesn't get packed on top of it past 8 hours.
 
     Idempotent and safe to call after any import/sync/regenerate: since real data
-    arrives asynchronously (crawl imported today, GSC connected next week), this
-    always re-derives one coherent calendar from whatever's currently in the DB,
-    rather than each source guessing around what the others might have already
-    placed.
+    arrives asynchronously (crawl imported today, GSC connected next week), this always
+    re-derives one coherent calendar from whatever's currently in the DB (excluding
+    manually-scheduled tasks), rather than each source guessing around what the others
+    might have already placed.
 
-    Two categories of task sit outside this weekly queue entirely, both calendar-
-    anchored by generate_reporting_tasks instead of taking a sequential slot:
+    Two categories of task sit outside this queue entirely, both calendar-anchored by
+    generate_reporting_tasks instead of taking a sequential slot:
       - weekly_report/monthly_report_mbr: start the campaign's SECOND month, one per
-        Wednesday -- the one day of the week this queue deliberately never uses
-        (see _week_slot_date), so the two never compete for the same day.
-      - performance_dashboard: the one-time "set up reporting" task, fixed to the
-        LAST Wednesday of month 1 (bridging into the above).
+        Wednesday -- the one day of the week this queue deliberately never uses (see
+        WEDNESDAY below), so the two never compete for the same day.
+      - performance_dashboard: the one-time "set up reporting" task, fixed to the LAST
+        Wednesday of month 1 (bridging into the above).
+    schema_recommendations is a third special case: not calendar-anchored, but not part
+    of the main capacity-packing pass either -- it's placed separately afterward, same
+    day as technical_audit if there's room left in that day's budget (there almost
+    always is: 3h + 0.75h is well under 8h), otherwise the next day with room, found the
+    exact same way as everything else (see _assign_next_available_slot).
     """
     campaign = db.query(Campaign).filter(Campaign.site_id == site_id).order_by(Campaign.start_date.desc()).first()
     if not campaign:
@@ -159,24 +190,22 @@ def reschedule_all_tasks(db: Session, site_id: int) -> None:
     anchor = max(campaign.start_date, dt.date.today())
     campaign_last_day = add_months(campaign.start_date.replace(day=1), campaign.duration_months) - dt.timedelta(days=1)
 
-    week_slots: list[dt.date] = []
-    i = 0
-    while True:
-        d = _week_slot_date(anchor, i)
-        if d > campaign_last_day:
-            break
-        week_slots.append(d)
-        i += 1
-    if not week_slots:
+    days: list[dt.date] = []
+    d = anchor
+    while d <= campaign_last_day:
+        if d.weekday() < 5 and d.weekday() != WEDNESDAY:
+            days.append(d)
+        d += dt.timedelta(days=1)
+    if not days:
         # The campaign's own configured end has already passed (e.g. "today" landed
         # after it) -- fall back to a single day so a freshly-synced finding still
         # has somewhere to go, rather than going dateless purely because of this
         # edge case rather than a real capacity limit.
-        week_slots = [anchor]
+        days = [anchor]
 
     all_tasks = db.scalars(select(Task).where(Task.site_id == site_id)).all()
     # weekly_report/monthly_report_mbr/performance_dashboard all stay calendar-
-    # anchored (generate_reporting_tasks) regardless of how this weekly queue paces.
+    # anchored (generate_reporting_tasks) regardless of how this queue paces.
     reporting_tasks = [
         t for t in all_tasks if (t.optimization_level or default_optimization_level(t.category)) == "reporting"
     ]
@@ -184,38 +213,42 @@ def reschedule_all_tasks(db: Session, site_id: int) -> None:
     excluded_ids = {t.id for t in reporting_tasks + schema_tasks}
     sequential_tasks = [t for t in all_tasks if t.id not in excluded_ids]
 
-    # One task per week_slot, in phase order (benchmarking -> technical_audit ->
-    # key_fix -> quick_win -> ongoing_content -- see _phase_sort_key). Ongoing
-    # content's own recurring tasks (research/brief/article/page-optimization/llm --
-    # source="content_plan") are included here rather than kept on
-    # generate_content_plan's own per-month batching: that per-month batching is
-    # what caused the very cramming this replaces, letting a whole month's content
-    # quota land within that same month regardless of how many weeks were actually
-    # available for it.
-    ordered = sorted(sequential_tasks, key=_phase_sort_key)
-    for task, target_date in zip(ordered, week_slots):
-        task.target_date = target_date
-        task.month_index = _month_index_for(anchor, target_date)
-    for task in ordered[len(week_slots):]:
-        task.target_date = None
-        task.month_index = None
+    manual_tasks = [t for t in sequential_tasks if t.manually_scheduled]
+    auto_tasks = [t for t in sequential_tasks if not t.manually_scheduled]
+
+    # Seed each already-manually-placed task's hours against its OWN existing date --
+    # autoscheduling below must not stack more work on top of a day a human already
+    # committed to past its 8-hour budget. A manual date outside `days` (a weekend, a
+    # Wednesday, past the campaign end -- the due-date route doesn't restrict this)
+    # simply never matches a key here, which is fine: it's not a day this scheduler
+    # allocates against anyway.
+    day_hours: dict[dt.date, float] = {}
+    for t in manual_tasks:
+        if t.target_date:
+            day_hours[t.target_date] = day_hours.get(t.target_date, 0.0) + (t.estimated_hours or 0.0)
+
+    # In phase order (benchmarking -> technical_audit -> key_fix -> quick_win ->
+    # ongoing_content -- see _phase_sort_key), each task consuming its own
+    # estimated_hours against the day it lands on. Ongoing content's own recurring
+    # tasks (research/brief/article/page-optimization/llm -- source="content_plan")
+    # are included here rather than kept on generate_content_plan's own per-month
+    # batching: that per-month batching is what caused the very cramming this
+    # replaces, letting a whole month's content quota land within that same month
+    # regardless of how much capacity was actually available for it.
+    ordered = sorted(auto_tasks, key=_phase_sort_key)
+    day_idx = 0
+    for task in ordered:
+        day_idx = _assign_next_available_slot(task, days, day_hours, anchor, day_idx)
 
     technical_audit = next((t for t in sequential_tasks if t.category == "technical_audit"), None)
-    if schema_tasks and technical_audit and technical_audit.target_date:
-        base = technical_audit.target_date
-        monday = base - dt.timedelta(days=base.weekday())
-        thursday = monday + dt.timedelta(days=THURSDAY)
-        # Thursday, unless technical_audit itself landed there (possible if the
-        # campaign happens to start on a Thursday) -- then fall back to Friday.
-        # This can never collide with a DIFFERENT week's slot: every week_slots
-        # entry shares the exact same day-of-week (a week is exactly 7 days), so
-        # this Thursday/Friday can only ever coincide with technical_audit's OWN
-        # slot -- which the fallback above already handles -- never with another
-        # week's task 7+ days away.
-        schema_date = thursday if thursday != base else monday + dt.timedelta(days=FRIDAY)
+    if schema_tasks and technical_audit and technical_audit.target_date in days:
+        start_idx = days.index(technical_audit.target_date)
         for schema_task in schema_tasks:
-            schema_task.target_date = schema_date
-            schema_task.month_index = _month_index_for(anchor, schema_date)
+            _assign_next_available_slot(schema_task, days, day_hours, anchor, start_idx)
+    elif schema_tasks and not (technical_audit and technical_audit.target_date):
+        for schema_task in schema_tasks:
+            schema_task.target_date = None
+            schema_task.month_index = None
 
     db.commit()
 
@@ -252,6 +285,7 @@ def ensure_benchmarking_task(db: Session, site_id: int, start_date: dt.date) -> 
             target_date=item.target_date,
             effort_tier=item.effort_tier,
             optimization_level=default_optimization_level(item.category),
+            estimated_hours=estimated_hours_for(item.category),
             status="todo",
         )
     )
@@ -283,6 +317,7 @@ def ensure_anchor_optimization_task(db: Session, site_id: int) -> None:
             severity="medium",
             effort_tier="medium",
             optimization_level=default_optimization_level("anchor_optimization"),
+            estimated_hours=estimated_hours_for("anchor_optimization"),
             status="todo",
         )
     )
@@ -314,6 +349,7 @@ def ensure_url_structure_optimization_task(db: Session, site_id: int) -> None:
             severity="medium",
             effort_tier="medium",
             optimization_level=default_optimization_level("url_structure_optimization"),
+            estimated_hours=estimated_hours_for("url_structure_optimization"),
             status="todo",
         )
     )
@@ -322,9 +358,10 @@ def ensure_url_structure_optimization_task(db: Session, site_id: int) -> None:
 def ensure_schema_recommendations_task(db: Session, site_id: int) -> None:
     """Seeds the one-off "Schema Recommendations" Key Fix task if this site doesn't
     already have one. Its target_date is intentionally left unset here --
-    reschedule_all_tasks computes it separately (same week as technical_audit, on
-    Thursday) once technical_audit's own date is known, rather than assigning it a
-    normal sequential slot."""
+    reschedule_all_tasks computes it separately (same day as technical_audit, if
+    there's capacity left that day, else the next day with room) once
+    technical_audit's own date is known, rather than assigning it a normal
+    sequential slot."""
     exists = db.scalars(
         select(Task.id).where(Task.site_id == site_id, Task.category == "schema_recommendations")
     ).first()
@@ -344,13 +381,14 @@ def ensure_schema_recommendations_task(db: Session, site_id: int) -> None:
             description=(
                 "Review the site's structured data (or lack of it) alongside the technical audit and "
                 "recommend/implement the schema types that fit its content (Article, Product, FAQ, "
-                "Organization, etc.) -- same week as the technical audit, since both come from the same "
+                "Organization, etc.) -- same day as the technical audit, since both come from the same "
                 "crawl pass."
             ),
             affected_urls=[],
             severity="medium",
             effort_tier="medium",
             optimization_level=default_optimization_level("schema_recommendations"),
+            estimated_hours=estimated_hours_for("schema_recommendations"),
             status="todo",
         )
     )
@@ -430,6 +468,7 @@ def run_crawl_import(db: Session, site_id: int, folder: str, crawl_date: dt.date
                 target_date=t.target_date,
                 effort_tier=t.effort_tier,
                 optimization_level=default_optimization_level(t.category),
+                estimated_hours=estimated_hours_for(t.category),
                 status="todo",
                 assignee=default_assignee,
             )
@@ -595,6 +634,7 @@ def regenerate_content_plan(db: Session, site_id: int) -> int:
                 target_date=item.target_date,
                 effort_tier=item.effort_tier,
                 optimization_level=default_optimization_level(item.category),
+                estimated_hours=estimated_hours_for(item.category),
                 status="todo",
                 assignee=campaign.default_assignee,
             )
@@ -756,6 +796,7 @@ def sync_gsc_and_generate_tasks(db: Session, site_id: int) -> dict:
                 target_date=t.target_date,
                 effort_tier=t.effort_tier,
                 optimization_level=default_optimization_level(t.category),
+                estimated_hours=estimated_hours_for(t.category),
                 status="todo",
                 assignee=default_assignee,
             )
@@ -860,6 +901,7 @@ def sync_ga4_and_generate_tasks(db: Session, site_id: int) -> dict:
                 target_date=t.target_date,
                 effort_tier=t.effort_tier,
                 optimization_level=default_optimization_level(t.category),
+                estimated_hours=estimated_hours_for(t.category),
                 status="todo",
                 assignee=default_assignee,
             )
