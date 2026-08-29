@@ -11,3 +11,7 @@ google-auth
 python-dotenv
 httpx
 anthropic
+# Postgres driver -- only actually used when DATABASE_URL points at a postgres://
+# DSN (see app/db.py and render.yaml); local dev keeps using SQLite (stdlib
+# sqlite3, no driver needed) unless DATABASE_URL is set.
+psycopg2-binary

@@ -1,0 +1,36 @@
+# Render "Blueprint" -- Render reads this file automatically when you connect a repo
+# via "New +" -> "Blueprint", and provisions exactly what's described below in one
+# step: a free Postgres database, plus a free web service running this app against
+# it. See build_exe.md for the OTHER deployment path (a standalone .exe for a single
+# person's machine) -- this file is for the shared, always-on hosted version instead.
+#
+# Secrets (Google OAuth, Anthropic) are deliberately NOT in this file -- `sync: false`
+# below means Render prompts for them once during setup and stores them itself,
+# rather than them ever being committed to this (public) repo.
+databases:
+  - name: seo-task-planner-db
+    plan: free
+
+services:
+  - type: web
+    name: seo-task-planner
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: seo-task-planner-db
+          property: connectionString
+      # Fill these in during the Blueprint setup screen (or later, under the web
+      # service's Environment tab). The app runs fine without them -- GSC/GA4 sync
+      # and the plan-editing chat just stay disabled until they're set.
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_REDIRECT_URI
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
