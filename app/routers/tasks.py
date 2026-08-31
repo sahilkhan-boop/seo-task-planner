@@ -6,7 +6,7 @@ import io
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import RedirectResponse, Response, StreamingResponse
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -282,6 +282,14 @@ def my_tasks(
     site_ids = {t.site_id for t in tasks}
     sites_by_id = {s.id: s for s in db.scalars(select(Site).where(Site.id.in_(site_ids))).all()} if site_ids else {}
 
+    # Cross-site, not per-site -- this is the same "assigned by name, before the
+    # email convention" cleanup surfaced everywhere assignee shows up (see
+    # _tasks_for_assignee's own docstring), so gathering it here means the whole
+    # backlog can be swept in a couple of clicks instead of hunting site by site.
+    other_assignees = sorted({
+        t.assignee for t in db.scalars(select(Task)).all() if t.assignee and t.assignee != email
+    })
+
     return templates.TemplateResponse(
         request,
         "my_tasks.html",
@@ -289,12 +297,45 @@ def my_tasks(
             "email": email,
             "tasks": tasks,
             "sites_by_id": sites_by_id,
+            "other_assignees": other_assignees,
             "populated_by": POPULATED_BY,
             "optimization_level_labels": OPTIMIZATION_LEVEL_LABELS,
             "filters": {"status": status or ""},
             "total": len(tasks),
         },
     )
+
+
+def _bulk_reassign(db: Session, old_assignee: str, new_assignee: str) -> int:
+    """One-time cleanup tool for the "assignee used to be a free-text name"
+    transition -- every task currently assigned to old_assignee (e.g. "Sahil" /
+    "Sahil Khan", typed by hand before the email convention) moves to
+    new_assignee in one shot, across every site, instead of hand-editing each
+    task's assignee field one at a time. Self-service and reversible (it's just
+    another assignee edit) -- deliberately NOT a raw database script, so it works
+    the same on Render's Postgres as it does locally without anyone needing
+    direct database access. Returns how many rows moved, so blank/no-op input
+    (either field empty after stripping) is a safe no-op rather than a match-
+    everything or match-nothing surprise.
+    """
+    old = old_assignee.strip()
+    new = new_assignee.strip()
+    if not old or not new:
+        return 0
+    result = db.execute(update(Task).where(Task.assignee == old).values(assignee=new))
+    db.commit()
+    return result.rowcount
+
+
+@router.post("/my-tasks/reassign")
+def bulk_reassign(
+    request: Request,
+    old_assignee: str = Form(...),
+    new_assignee: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    _bulk_reassign(db, old_assignee, new_assignee)
+    return RedirectResponse(url="/my-tasks", status_code=303)
 
 
 @router.get("/sites/{site_id}/tasks")

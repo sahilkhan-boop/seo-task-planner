@@ -6,7 +6,7 @@ assigned on show up together, keyed off their login email against Task.assignee.
 import datetime as dt
 
 from app.models import Site, Task
-from app.routers.tasks import _tasks_for_assignee
+from app.routers.tasks import _bulk_reassign, _tasks_for_assignee
 
 EMAIL = "priya@peppercontent.io"
 
@@ -89,3 +89,31 @@ def test_name_only_legacy_assignees_dont_match_an_email(db_session):
     _task(db_session, site.id, "Priya", title="Legacy name-only assignee")
 
     assert _tasks_for_assignee(db_session, EMAIL) == []
+
+
+def test_bulk_reassign_moves_every_matching_task_across_all_sites(db_session):
+    site_a = _site(db_session, "a.com")
+    site_b = _site(db_session, "b.com")
+    t1 = _task(db_session, site_a.id, "Sahil", title="On site A")
+    t2 = _task(db_session, site_b.id, "Sahil Khan", title="On site B, different spelling")
+    untouched = _task(db_session, site_a.id, "someone.else@peppercontent.io", title="Not Sahil's")
+
+    moved = _bulk_reassign(db_session, "Sahil", EMAIL)
+
+    assert moved == 1
+    db_session.refresh(t1)
+    db_session.refresh(t2)
+    db_session.refresh(untouched)
+    assert t1.assignee == EMAIL
+    assert t2.assignee == "Sahil Khan"  # a different string -- exact match only, not a substring/fuzzy one
+    assert untouched.assignee == "someone.else@peppercontent.io"
+
+
+def test_bulk_reassign_is_a_no_op_on_blank_input(db_session):
+    site = _site(db_session)
+    t = _task(db_session, site.id, "Sahil", title="Task")
+
+    assert _bulk_reassign(db_session, "", EMAIL) == 0
+    assert _bulk_reassign(db_session, "Sahil", "  ") == 0
+    db_session.refresh(t)
+    assert t.assignee == "Sahil"

@@ -22,6 +22,26 @@
       <button type="submit">Filter</button>
     </form>
 
+    {% if other_assignees %}
+      <details class="card" style="margin-bottom: 14px;">
+        <summary>Reassign someone else's tasks to you (bulk cleanup for name-only assignees) →</summary>
+        <form method="post" action="/my-tasks/reassign" style="display: flex; gap: 8px; align-items: center; margin-top: 10px;">
+          <select name="old_assignee" required>
+            {% for name in other_assignees %}
+              <option value="{{ name }}">{{ name }}</option>
+            {% endfor %}
+          </select>
+          <span>→</span>
+          <input type="text" name="new_assignee" value="{{ email }}" required size="30" />
+          <button type="submit">Reassign all their tasks to this email →</button>
+        </form>
+        <p class="muted" style="font-size: 0.85rem; margin-top: 6px;">
+          Moves every task currently assigned to the selected name/email — across every site — to whatever's
+          in the second field. Meant for one-time cleanup of tasks assigned before the email convention.
+        </p>
+      </details>
+    {% endif %}
+
     {% if tasks %}
       <section class="card month-block">
         <table class="table task-plan-table">
