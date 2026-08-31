@@ -246,7 +246,13 @@ def _redirect_after(site_id: int, redirect_to: str) -> str:
     return f"/sites/{site_id}{suffix}"
 
 
-def _tasks_for_assignee(db: Session, email: str | None, status: str | None = None) -> list[Task]:
+def _tasks_for_assignee(
+    db: Session,
+    email: str | None,
+    status: str | None = None,
+    severity: str | None = None,
+    optimization_level: str | None = None,
+) -> list[Task]:
     """Every other task view in this app is scoped to one site -- someone assigned
     tasks across several client sites (the normal case: see Connection's shared,
     desktop-wide OAuth model for the same underlying reality) had no single place
@@ -267,6 +273,10 @@ def _tasks_for_assignee(db: Session, email: str | None, status: str | None = Non
     query = select(Task).where(Task.assignee == email)
     if status:
         query = query.where(Task.status == status)
+    if severity:
+        query = query.where(Task.severity == severity)
+    if optimization_level:
+        query = query.where(Task.optimization_level == optimization_level)
     return db.scalars(query.order_by(Task.target_date.is_(None), Task.target_date)).all()
 
 
@@ -286,8 +296,14 @@ class _SiteLabeledTask:
         return getattr(self._task, name)
 
 
-def _labeled_tasks_for_calendar(db: Session, email: str | None, status: str | None = None) -> list:
-    tasks = _tasks_for_assignee(db, email, status)
+def _labeled_tasks_for_calendar(
+    db: Session,
+    email: str | None,
+    status: str | None = None,
+    severity: str | None = None,
+    optimization_level: str | None = None,
+) -> list:
+    tasks = _tasks_for_assignee(db, email, status, severity, optimization_level)
     site_ids = {t.site_id for t in tasks}
     sites_by_id = {s.id: s for s in db.scalars(select(Site).where(Site.id.in_(site_ids))).all()} if site_ids else {}
     return [_SiteLabeledTask(t, short_site_label(sites_by_id[t.site_id].domain)) for t in tasks]
@@ -313,9 +329,11 @@ def my_tasks_calendar(
     request: Request,
     db: Session = Depends(get_db),
     status: str | None = None,
+    severity: str | None = None,
+    optimization_level: str | None = None,
 ):
     email = request.session.get("email")
-    labeled = _labeled_tasks_for_calendar(db, email, status)
+    labeled = _labeled_tasks_for_calendar(db, email, status, severity, optimization_level)
     months = _calendar_months_for_tasks(labeled)
 
     return templates.TemplateResponse(
@@ -326,8 +344,11 @@ def my_tasks_calendar(
             "months": months,
             "today": dt.date.today(),
             "populated_by": POPULATED_BY,
+            "optimization_levels": OPTIMIZATION_LEVELS,
             "optimization_level_labels": OPTIMIZATION_LEVEL_LABELS,
-            "filters": {"status": status or ""},
+            "filters": {
+                "status": status or "", "severity": severity or "", "optimization_level": optimization_level or "",
+            },
             "total": len(labeled),
         },
     )
@@ -364,9 +385,11 @@ def my_tasks(
     request: Request,
     db: Session = Depends(get_db),
     status: str | None = None,
+    severity: str | None = None,
+    optimization_level: str | None = None,
 ):
     email = request.session.get("email")
-    tasks = _tasks_for_assignee(db, email, status)
+    tasks = _tasks_for_assignee(db, email, status, severity, optimization_level)
 
     site_ids = {t.site_id for t in tasks}
     sites_by_id = {s.id: s for s in db.scalars(select(Site).where(Site.id.in_(site_ids))).all()} if site_ids else {}
@@ -388,8 +411,11 @@ def my_tasks(
             "sites_by_id": sites_by_id,
             "other_assignees": other_assignees,
             "populated_by": POPULATED_BY,
+            "optimization_levels": OPTIMIZATION_LEVELS,
             "optimization_level_labels": OPTIMIZATION_LEVEL_LABELS,
-            "filters": {"status": status or ""},
+            "filters": {
+                "status": status or "", "severity": severity or "", "optimization_level": optimization_level or "",
+            },
             "total": len(tasks),
         },
     )

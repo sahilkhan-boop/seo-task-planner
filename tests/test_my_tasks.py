@@ -25,10 +25,14 @@ def _site(db_session, domain="example.com"):
     return site
 
 
-def _task(db_session, site_id, assignee, status="todo", target_date=None, title="Task"):
+def _task(
+    db_session, site_id, assignee, status="todo", target_date=None, title="Task",
+    severity="medium", optimization_level=None,
+):
     task = Task(
-        site_id=site_id, source="gsc", category="ctr_optimization", severity="medium",
+        site_id=site_id, source="gsc", category="ctr_optimization", severity=severity,
         title=title, description="desc", status=status, assignee=assignee, target_date=target_date,
+        optimization_level=optimization_level,
     )
     db_session.add(task)
     db_session.commit()
@@ -77,6 +81,40 @@ def test_status_filter_applies_on_top_of_the_assignee_match(db_session):
     result = _tasks_for_assignee(db_session, EMAIL, status="done")
 
     assert [t.id for t in result] == [done.id]
+
+
+def test_severity_filter_applies_on_top_of_the_assignee_match(db_session):
+    site = _site(db_session)
+    high = _task(db_session, site.id, EMAIL, severity="high", title="High")
+    _task(db_session, site.id, EMAIL, severity="low", title="Low")
+
+    result = _tasks_for_assignee(db_session, EMAIL, severity="high")
+
+    assert [t.id for t in result] == [high.id]
+
+
+def test_optimization_level_filter_applies_on_top_of_the_assignee_match(db_session):
+    site = _site(db_session)
+    quick_win = _task(db_session, site.id, EMAIL, optimization_level="quick_win", title="Quick win")
+    _task(db_session, site.id, EMAIL, optimization_level="key_fix", title="Key fix")
+
+    result = _tasks_for_assignee(db_session, EMAIL, optimization_level="quick_win")
+
+    assert [t.id for t in result] == [quick_win.id]
+
+
+def test_all_three_filters_combine(db_session):
+    site = _site(db_session)
+    match = _task(
+        db_session, site.id, EMAIL, status="todo", severity="high",
+        optimization_level="key_fix", title="Matches all three",
+    )
+    _task(db_session, site.id, EMAIL, status="done", severity="high", optimization_level="key_fix", title="Wrong status")
+    _task(db_session, site.id, EMAIL, status="todo", severity="low", optimization_level="key_fix", title="Wrong severity")
+
+    result = _tasks_for_assignee(db_session, EMAIL, status="todo", severity="high", optimization_level="key_fix")
+
+    assert [t.id for t in result] == [match.id]
 
 
 def test_no_email_returns_nothing_rather_than_every_unassigned_task(db_session):

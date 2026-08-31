@@ -20,6 +20,18 @@
           <option value="{{ s }}" {{ "selected" if filters.status == s else "" }}>{{ s }}</option>
         {% endfor %}
       </select>
+      <select name="severity" onchange="this.form.submit()">
+        <option value="">All severities</option>
+        {% for sev in ["high", "medium", "low"] %}
+          <option value="{{ sev }}" {{ "selected" if filters.severity == sev else "" }}>{{ sev }}</option>
+        {% endfor %}
+      </select>
+      <select name="optimization_level" onchange="this.form.submit()">
+        <option value="">All optimization levels</option>
+        {% for level in optimization_levels %}
+          <option value="{{ level }}" {{ "selected" if filters.optimization_level == level else "" }}>{{ optimization_level_labels[level] }}</option>
+        {% endfor %}
+      </select>
     </form>
 
     <p class="muted">

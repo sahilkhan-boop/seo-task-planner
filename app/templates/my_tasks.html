@@ -19,8 +19,20 @@
           <option value="{{ s }}" {{ "selected" if filters.status == s else "" }}>{{ s }}</option>
         {% endfor %}
       </select>
+      <select name="severity">
+        <option value="">All severities</option>
+        {% for sev in ["high", "medium", "low"] %}
+          <option value="{{ sev }}" {{ "selected" if filters.severity == sev else "" }}>{{ sev }}</option>
+        {% endfor %}
+      </select>
+      <select name="optimization_level">
+        <option value="">All optimization levels</option>
+        {% for level in optimization_levels %}
+          <option value="{{ level }}" {{ "selected" if filters.optimization_level == level else "" }}>{{ optimization_level_labels[level] }}</option>
+        {% endfor %}
+      </select>
       <button type="submit">Filter</button>
-      <a class="button secondary" href="/my-tasks/calendar?status={{ filters.status }}">Calendar view →</a>
+      <a class="button secondary" href="/my-tasks/calendar?status={{ filters.status }}&severity={{ filters.severity }}&optimization_level={{ filters.optimization_level }}">Calendar view →</a>
       <a class="button secondary" href="/my-tasks/calendar.pdf">Download PDF →</a>
       <a class="button secondary" href="/my-tasks/calendar.xlsx">Download Excel →</a>
     </form>
