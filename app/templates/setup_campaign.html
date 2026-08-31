@@ -40,7 +40,7 @@
         <input type="number" name="capacity_per_week" min="1" value="{{ campaign.capacity_per_week if campaign else 5 }}" />
       </label>
       <label>Default assignee
-        <input type="text" name="default_assignee" placeholder="e.g. Priya"
+        <input type="text" name="default_assignee" placeholder="e.g. priya@peppercontent.io"
                value="{{ campaign.default_assignee if campaign else '' }}" />
       </label>
       <label>Technical backlog workflow
@@ -57,7 +57,8 @@
     <p class="muted" style="margin-top: 4px;">
       Content pieces + pages to optimize drive the recurring content/growth plan spread across every month
       of the campaign (generate it from the Task Plan page). Default assignee pre-fills new tasks — reassign
-      any individual task later. Technical backlog workflow controls how the crawl-side findings (404s,
+      any individual task later. Use the person's email address (not just a name) so their tasks show up on
+      their own <a href="/my-tasks">My Tasks</a> page. Technical backlog workflow controls how the crawl-side findings (404s,
       redirects, indexation-blocking, server errors) get turned into tasks — one focused audit pass, or
       separate tickets per category. Re-run the crawl import after changing this to apply it. If a site has
       no existing content worth optimizing, switch "That count is..." to new pages — the same monthly count

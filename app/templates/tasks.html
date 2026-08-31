@@ -142,7 +142,8 @@
             <td>
               <form method="post" action="/sites/{{ site.id }}/tasks/{{ t.id }}/assignee">
                 <input type="hidden" name="redirect_to" value="/tasks" />
-                <input type="text" name="assignee" value="{{ t.assignee or '' }}" placeholder="Unassigned"
+                <input type="text" name="assignee" value="{{ t.assignee or '' }}" placeholder="email address"
+                       title="Use an email address so this task shows up on that person's My Tasks page"
                        onchange="this.form.submit()" size="10" />
               </form>
             </td>

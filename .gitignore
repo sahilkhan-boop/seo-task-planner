@@ -16,3 +16,4 @@ dist/
 *.log
 *.pid
 task_hours_worksheet.csv
+task_hours_worksheet_v2.csv

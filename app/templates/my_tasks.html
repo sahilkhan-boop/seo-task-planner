@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}My Tasks{% endblock %}
+{% block content %}
+  <h1>My Tasks</h1>
+
+  {% if not email %}
+    <p class="muted">Log in to see the tasks assigned to you across every site.</p>
+  {% else %}
+    <p class="muted">
+      {{ total }} task(s) assigned to <strong>{{ email }}</strong> across every site, sorted by due date.
+      Assigned by name instead of email? Those won't show up here until reassigned — see
+      <a href="/sites">Sites</a> → a site's Task Plan → the Assignee column.
+    </p>
+
+    <form method="get" class="filter-bar">
+      <select name="status">
+        <option value="">All statuses</option>
+        {% for s in ["todo", "in_progress", "done"] %}
+          <option value="{{ s }}" {{ "selected" if filters.status == s else "" }}>{{ s }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit">Filter</button>
+    </form>
+
+    {% if tasks %}
+      <section class="card month-block">
+        <table class="table task-plan-table">
+          <thead>
+            <tr>
+              <th>Site</th><th>Date</th><th>Category</th><th>Task</th><th>Description / Logic</th>
+              <th>Status</th><th>Open</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for t in tasks %}
+            {% set site = sites_by_id.get(t.site_id) %}
+            <tr class="{{ 'opt-row-' ~ t.optimization_level if t.optimization_level else 'severity-row-' ~ t.severity }}">
+              <td>{{ site.domain if site else ("Site #" ~ t.site_id) }}</td>
+              <td>
+                <form method="post" action="/sites/{{ t.site_id }}/tasks/{{ t.id }}/due-date">
+                  <input type="hidden" name="redirect_to" value="/my-tasks" />
+                  <input type="date" name="target_date" value="{{ t.target_date or '' }}" required
+                         onchange="this.form.submit()" title="Reschedule this task" />
+                </form>
+              </td>
+              <td>
+                {{ t.category.replace("_", " ") }}
+                {% if populated_by.get(t.category) %}
+                  <br /><span class="muted" style="font-size: 0.75rem;">({{ populated_by[t.category] }})</span>
+                {% endif %}
+              </td>
+              <td>{{ t.title }}</td>
+              <td class="task-desc-cell">
+                {{ t.description }}
+                {% if t.affected_urls %}
+                  <span class="muted" style="font-size: 0.78rem;"> — {{ t.affected_urls|length }} URL(s), see Export →</span>
+                {% endif %}
+                {% if t.metric_actual is not none or t.metric_benchmark is not none %}
+                  <br />
+                  {% if t.metric_actual is not none %}
+                    <span class="metric-highlight">Actual: {{ t.metric_actual }}</span>
+                  {% endif %}
+                  {% if t.metric_benchmark is not none %}
+                    <span class="metric-highlight">Benchmark: {{ t.metric_benchmark }}</span>
+                  {% endif %}
+                {% endif %}
+              </td>
+              <td>
+                <form method="post" action="/sites/{{ t.site_id }}/tasks/{{ t.id }}/status">
+                  <input type="hidden" name="redirect_to" value="/my-tasks" />
+                  <select name="status" onchange="this.form.submit()">
+                    {% for s in ["todo", "in_progress", "done"] %}
+                      <option value="{{ s }}" {{ "selected" if t.status == s else "" }}>{{ s }}</option>
+                    {% endfor %}
+                  </select>
+                </form>
+              </td>
+              <td><a class="button secondary" href="/sites/{{ t.site_id }}/tasks">Open →</a></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </section>
+    {% else %}
+      <p class="muted">Nothing assigned to you right now.</p>
+    {% endif %}
+  {% endif %}
+{% endblock %}

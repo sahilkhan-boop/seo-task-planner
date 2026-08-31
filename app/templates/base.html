@@ -9,6 +9,9 @@
 <body>
   <header class="topbar">
     <a class="brand" href="/sites">SEO Task Planner</a>
+    {% if request.session.get('email') %}
+      <a href="/my-tasks" class="{{ 'active' if request.url.path == '/my-tasks' else '' }}">My Tasks</a>
+    {% endif %}
     {% if site %}
       <nav class="site-nav">
         <a href="/sites/{{ site.id }}" class="{{ 'active' if request.url.path == '/sites/' ~ site.id else '' }}">Overview</a>

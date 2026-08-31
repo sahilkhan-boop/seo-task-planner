@@ -233,6 +233,70 @@ def _current_campaign(db: Session, site_id: int) -> Campaign | None:
     ).first()
 
 
+def _redirect_after(site_id: int, redirect_to: str) -> str:
+    """redirect_to is normally a site-relative path (e.g. "/tasks") that needs the
+    current site prefixed onto it. My Tasks (see my_tasks below) is the one place
+    that edits tasks belonging to several different sites from a single page, so an
+    edit made there needs to redirect back to itself rather than into whichever
+    task's own site -- recognized by its own fixed, site-agnostic path instead of
+    getting the usual site_id prefix."""
+    if redirect_to.startswith("/my-tasks"):
+        return redirect_to
+    suffix = redirect_to if redirect_to.startswith("/") else f"/{redirect_to}"
+    return f"/sites/{site_id}{suffix}"
+
+
+def _tasks_for_assignee(db: Session, email: str | None, status: str | None = None) -> list[Task]:
+    """Every other task view in this app is scoped to one site -- someone assigned
+    tasks across several client sites (the normal case: see Connection's shared,
+    desktop-wide OAuth model for the same underlying reality) had no single place
+    to see their own work without opening each site in turn and filtering by their
+    own name. Keyed off the logged-in session email against Task.assignee, which is
+    a plain free-text column, not a foreign key -- going forward assignee is meant
+    to store the person's email (see the assignee input's own title text in
+    tasks.html and the default_assignee hint in setup_campaign.html) so it lines up
+    with the session email set at login. Older tasks assigned by first name only
+    (e.g. "Priya") simply won't match here until reassigned -- expected, not a bug.
+
+    email=None (login-optional deployments -- config.LOGIN_REQUIRED off, the
+    standalone .exe -- have no session email at all) deliberately matches nothing
+    rather than every task site-wide against a blank assignee.
+    """
+    if not email:
+        return []
+    query = select(Task).where(Task.assignee == email)
+    if status:
+        query = query.where(Task.status == status)
+    return db.scalars(query.order_by(Task.target_date.is_(None), Task.target_date)).all()
+
+
+@router.get("/my-tasks")
+def my_tasks(
+    request: Request,
+    db: Session = Depends(get_db),
+    status: str | None = None,
+):
+    email = request.session.get("email")
+    tasks = _tasks_for_assignee(db, email, status)
+
+    site_ids = {t.site_id for t in tasks}
+    sites_by_id = {s.id: s for s in db.scalars(select(Site).where(Site.id.in_(site_ids))).all()} if site_ids else {}
+
+    return templates.TemplateResponse(
+        request,
+        "my_tasks.html",
+        {
+            "email": email,
+            "tasks": tasks,
+            "sites_by_id": sites_by_id,
+            "populated_by": POPULATED_BY,
+            "optimization_level_labels": OPTIMIZATION_LEVEL_LABELS,
+            "filters": {"status": status or ""},
+            "total": len(tasks),
+        },
+    )
+
+
 @router.get("/sites/{site_id}/tasks")
 def task_board(
     site_id: int,
@@ -357,12 +421,18 @@ def task_calendar(
 
 
 @router.post("/sites/{site_id}/tasks/{task_id}/status")
-def update_task_status(site_id: int, task_id: int, status: str = Form(...), db: Session = Depends(get_db)):
+def update_task_status(
+    site_id: int,
+    task_id: int,
+    status: str = Form(...),
+    redirect_to: str = Form("/tasks"),
+    db: Session = Depends(get_db),
+):
     task = db.get(Task, task_id)
     if task and task.site_id == site_id:
         task.status = status
         db.commit()
-    return RedirectResponse(url=f"/sites/{site_id}/tasks", status_code=303)
+    return RedirectResponse(url=_redirect_after(site_id, redirect_to), status_code=303)
 
 
 @router.post("/sites/{site_id}/tasks/{task_id}/due-date")
@@ -392,8 +462,7 @@ def update_task_due_date(
             # of silently re-deriving and overwriting it. See Task.manually_scheduled.
             task.manually_scheduled = True
             db.commit()
-    suffix = redirect_to if redirect_to.startswith("/") else f"/{redirect_to}"
-    return RedirectResponse(url=f"/sites/{site_id}{suffix}", status_code=303)
+    return RedirectResponse(url=_redirect_after(site_id, redirect_to), status_code=303)
 
 
 @router.post("/sites/{site_id}/tasks/{task_id}/assignee")
@@ -408,8 +477,7 @@ def update_task_assignee(
     if task and task.site_id == site_id:
         task.assignee = assignee.strip() or None
         db.commit()
-    suffix = redirect_to if redirect_to.startswith("/") else f"/{redirect_to}"
-    return RedirectResponse(url=f"/sites/{site_id}{suffix}", status_code=303)
+    return RedirectResponse(url=_redirect_after(site_id, redirect_to), status_code=303)
 
 
 @router.post("/sites/{site_id}/tasks/{task_id}/optimization-level")
@@ -428,8 +496,7 @@ def update_task_optimization_level(
     if task and task.site_id == site_id:
         task.optimization_level = optimization_level.strip() or None
         db.commit()
-    suffix = redirect_to if redirect_to.startswith("/") else f"/{redirect_to}"
-    return RedirectResponse(url=f"/sites/{site_id}{suffix}", status_code=303)
+    return RedirectResponse(url=_redirect_after(site_id, redirect_to), status_code=303)
 
 
 @router.get("/sites/{site_id}/tasks/{task_id}/export.csv")
