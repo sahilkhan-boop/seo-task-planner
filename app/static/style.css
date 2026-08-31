@@ -350,6 +350,33 @@ select.badge {
   max-width: 100%;
   box-sizing: border-box;
 }
+/* My Tasks table (see my_tasks.html) -- its own class, NOT .task-plan-table, even
+   though it looks similar -- it has a different set of columns (Site instead of
+   Optimization Level/Assignee), and .task-plan-table's widths are positional
+   (nth-child), so reusing that class silently applied the wrong column's width to
+   each position here -- e.g. Site got Date's 10%, with no wrapping treatment for a
+   long URL, which then visually overlapped the date-picker input next to it. */
+.my-tasks-table { table-layout: fixed; }
+.my-tasks-table th:nth-child(1), .my-tasks-table td:nth-child(1) { width: 16%; }  /* Site */
+.my-tasks-table th:nth-child(2), .my-tasks-table td:nth-child(2) { width: 10%; }  /* Date */
+.my-tasks-table th:nth-child(3), .my-tasks-table td:nth-child(3) { width: 11%; }  /* Category */
+.my-tasks-table th:nth-child(4), .my-tasks-table td:nth-child(4) { width: 13%; }  /* Task */
+.my-tasks-table th:nth-child(5), .my-tasks-table td:nth-child(5) { width: 33%; }  /* Description / Logic */
+.my-tasks-table th:nth-child(6), .my-tasks-table td:nth-child(6) { width: 9%; }   /* Status */
+.my-tasks-table th:nth-child(7), .my-tasks-table td:nth-child(7) { width: 8%; }   /* Open */
+.my-tasks-table td input,
+.my-tasks-table td select {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+/* Same long-unbroken-string problem .task-desc-cell solves for Description --
+   Site is a full URL with no natural break points, so table-layout:fixed's
+   declared width alone doesn't make it wrap, just overflow. */
+.my-tasks-table td:nth-child(1) {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
 code { background: var(--card-bg); padding: 2px 6px; border-radius: 4px; font-size: 0.85em; border: 1px solid var(--border); }
 details summary { cursor: pointer; font-weight: 500; }
 details summary:hover { color: var(--accent); }

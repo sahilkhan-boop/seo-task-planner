@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}My Tasks — Calendar{% endblock %}
+{% block content %}
+  <div class="calendar-toolbar">
+    <h1>My Tasks — Calendar</h1>
+    <div class="calendar-toolbar-actions">
+      <a class="button secondary" href="/my-tasks">List view</a>
+      <a class="button secondary" href="/my-tasks/calendar.pdf">Download PDF →</a>
+      <a class="button secondary" href="/my-tasks/calendar.xlsx">Download Excel →</a>
+    </div>
+  </div>
+
+  {% if not email %}
+    <p class="muted">Log in to see the tasks assigned to you across every site.</p>
+  {% else %}
+    <form method="get" class="filter-bar">
+      <select name="status" onchange="this.form.submit()">
+        <option value="">All statuses</option>
+        {% for s in ["todo", "in_progress", "done"] %}
+          <option value="{{ s }}" {{ "selected" if filters.status == s else "" }}>{{ s }}</option>
+        {% endfor %}
+      </select>
+    </form>
+
+    <p class="muted">
+      {{ total }} task(s) assigned to <strong>{{ email }}</strong>, across every site — every cell's task is
+      tagged <code>[site]</code> since this calendar mixes tasks from all of them together.
+    </p>
+
+    {% if not months %}
+      <p class="muted">Nothing with a due date to show — see <a href="/my-tasks">the list view</a> instead.</p>
+    {% endif %}
+
+    {% for month in months %}
+      <section class="card month-calendar-card">
+        <h2>{{ month.label }}</h2>
+        <table class="month-calendar">
+          <thead>
+            <tr>{% for d in ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"] %}<th>{{ d }}</th>{% endfor %}</tr>
+          </thead>
+          <tbody>
+            {% for week in month.weeks %}
+            <tr>
+              {% for cell in week %}
+              <td class="{{ '' if cell.in_month else 'out-of-month' }} {{ 'is-today' if cell.date == today else '' }}">
+                <div class="cal-day-num">{{ cell.date.day }}</div>
+                {% for t in cell.tasks[:3] %}
+                  {% set opt_class = "opt-" ~ t.optimization_level if t.optimization_level else "severity-" ~ t.severity %}
+                  {% set opt_label = optimization_level_labels[t.optimization_level] if t.optimization_level else (t.severity ~ " severity") %}
+                  {% set mechanism = populated_by.get(t.category) %}
+                  <div class="cal-task {{ opt_class }}"
+                       title="{{ t.title }} — {{ opt_label }}{{ ' (' ~ mechanism ~ ')' if mechanism else '' }}">
+                    <div class="cal-task-title">{{ t.title }}</div>
+                    <div class="cal-task-meta">{{ opt_label }}</div>
+                  </div>
+                {% endfor %}
+                {% if cell.tasks|length > 3 %}
+                  <div class="cal-task-more">+{{ cell.tasks|length - 3 }} more</div>
+                {% endif %}
+              </td>
+              {% endfor %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </section>
+    {% endfor %}
+  {% endif %}
+{% endblock %}

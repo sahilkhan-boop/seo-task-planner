@@ -16,7 +16,7 @@ from app.models import Campaign, Site, Task
 from app.rules.optimization_levels import OPTIMIZATION_LEVELS, OPTIMIZATION_LEVEL_LABELS
 from app.scheduling.calendar_grid import build_campaign_calendar, calendar_span_months
 from app.services import NoCampaignError, regenerate_content_plan
-from app.templating import templates
+from app.templating import short_site_label, templates
 
 router = APIRouter()
 
@@ -268,6 +268,95 @@ def _tasks_for_assignee(db: Session, email: str | None, status: str | None = Non
     if status:
         query = query.where(Task.status == status)
     return db.scalars(query.order_by(Task.target_date.is_(None), Task.target_date)).all()
+
+
+class _SiteLabeledTask:
+    """Read-only display wrapper -- prefixes a task's title with its own site's
+    short domain label. The calendar/PDF/Excel views (see below) mix tasks from
+    every site into one grid; without some per-task site label every cell reads
+    like it's all one project. Delegates every other attribute to the real Task
+    row via __getattr__ rather than copying/mutating it, so the real row is never
+    touched -- this is purely a rendering-time label."""
+
+    def __init__(self, task: Task, site_label: str):
+        self._task = task
+        self.title = f"[{site_label}] {task.title}"
+
+    def __getattr__(self, name):
+        return getattr(self._task, name)
+
+
+def _labeled_tasks_for_calendar(db: Session, email: str | None, status: str | None = None) -> list:
+    tasks = _tasks_for_assignee(db, email, status)
+    site_ids = {t.site_id for t in tasks}
+    sites_by_id = {s.id: s for s in db.scalars(select(Site).where(Site.id.in_(site_ids))).all()} if site_ids else {}
+    return [_SiteLabeledTask(t, short_site_label(sites_by_id[t.site_id].domain)) for t in tasks]
+
+
+def _calendar_months_for_tasks(tasks: list) -> list:
+    """Span the grid off the tasks' own due dates instead of a campaign's
+    start_date/duration_months (what build_campaign_calendar normally gets fed
+    from) -- there's no single campaign here, these tasks span 4 different
+    sites each with their own campaign on their own schedule. Empty when nothing
+    has a due date at all, rather than defaulting to an arbitrary single month."""
+    dated = [t.target_date for t in tasks if t.target_date]
+    if not dated:
+        return []
+    start = min(dated).replace(day=1)
+    end = max(dated)
+    duration_months = (end.year - start.year) * 12 + (end.month - start.month) + 1
+    return build_campaign_calendar(start, duration_months, tasks)
+
+
+@router.get("/my-tasks/calendar")
+def my_tasks_calendar(
+    request: Request,
+    db: Session = Depends(get_db),
+    status: str | None = None,
+):
+    email = request.session.get("email")
+    labeled = _labeled_tasks_for_calendar(db, email, status)
+    months = _calendar_months_for_tasks(labeled)
+
+    return templates.TemplateResponse(
+        request,
+        "my_tasks_calendar.html",
+        {
+            "email": email,
+            "months": months,
+            "today": dt.date.today(),
+            "populated_by": POPULATED_BY,
+            "optimization_level_labels": OPTIMIZATION_LEVEL_LABELS,
+            "filters": {"status": status or ""},
+            "total": len(labeled),
+        },
+    )
+
+
+@router.get("/my-tasks/calendar.pdf")
+def my_tasks_calendar_pdf(request: Request, db: Session = Depends(get_db)):
+    email = request.session.get("email")
+    labeled = _labeled_tasks_for_calendar(db, email)
+    months = _calendar_months_for_tasks(labeled)
+    pdf_bytes = build_calendar_pdf(email or "My Tasks", months)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": "attachment; filename=my_task_calendar.pdf"},
+    )
+
+
+@router.get("/my-tasks/calendar.xlsx")
+def my_tasks_calendar_xlsx(request: Request, db: Session = Depends(get_db)):
+    email = request.session.get("email")
+    labeled = _labeled_tasks_for_calendar(db, email)
+    months = _calendar_months_for_tasks(labeled)
+    xlsx_bytes = build_calendar_xlsx(email or "My Tasks", months)
+    return Response(
+        content=xlsx_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=my_task_calendar.xlsx"},
+    )
 
 
 @router.get("/my-tasks")

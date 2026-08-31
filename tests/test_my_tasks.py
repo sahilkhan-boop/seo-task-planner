@@ -6,7 +6,14 @@ assigned on show up together, keyed off their login email against Task.assignee.
 import datetime as dt
 
 from app.models import Site, Task
-from app.routers.tasks import _bulk_reassign, _tasks_for_assignee
+from app.routers.tasks import (
+    _bulk_reassign,
+    _calendar_months_for_tasks,
+    _labeled_tasks_for_calendar,
+    _SiteLabeledTask,
+    _tasks_for_assignee,
+)
+from app.templating import short_site_label
 
 EMAIL = "priya@peppercontent.io"
 
@@ -117,3 +124,50 @@ def test_bulk_reassign_is_a_no_op_on_blank_input(db_session):
     assert _bulk_reassign(db_session, "Sahil", "  ") == 0
     db_session.refresh(t)
     assert t.assignee == "Sahil"
+
+
+def test_short_site_label_strips_scheme_www_and_trailing_slash():
+    assert short_site_label("https://www.oreilly.com/") == "oreilly.com"
+    assert short_site_label("http://accuquote.com/") == "accuquote.com"
+    assert short_site_label("cluballiance.aaa.com") == "cluballiance.aaa.com"
+
+
+def test_site_labeled_task_prefixes_title_without_touching_the_real_task(db_session):
+    site = _site(db_session, "www.oreilly.com")
+    task = _task(db_session, site.id, EMAIL, title="Fix broken links")
+
+    labeled = _SiteLabeledTask(task, "oreilly.com")
+
+    assert labeled.title == "[oreilly.com] Fix broken links"
+    assert labeled.severity == task.severity  # delegates every other attribute through
+    assert labeled.target_date == task.target_date
+    assert task.title == "Fix broken links"  # the real row is untouched
+
+
+def test_labeled_tasks_for_calendar_tags_each_task_with_its_own_site(db_session):
+    site_a = _site(db_session, "https://www.oreilly.com/")
+    site_b = _site(db_session, "https://accuquote.com/")
+    _task(db_session, site_a.id, EMAIL, title="On A")
+    _task(db_session, site_b.id, EMAIL, title="On B")
+
+    labeled = _labeled_tasks_for_calendar(db_session, EMAIL)
+
+    titles = sorted(t.title for t in labeled)
+    assert titles == ["[accuquote.com] On B", "[oreilly.com] On A"]
+
+
+def test_calendar_months_spans_from_earliest_to_latest_due_date(db_session):
+    site = _site(db_session)
+    _task(db_session, site.id, EMAIL, target_date=dt.date(2026, 1, 15), title="Jan")
+    _task(db_session, site.id, EMAIL, target_date=dt.date(2026, 3, 5), title="Mar")
+
+    months = _calendar_months_for_tasks(_tasks_for_assignee(db_session, EMAIL))
+
+    assert [m.label for m in months] == ["January 2026", "February 2026", "March 2026"]
+
+
+def test_calendar_months_empty_when_nothing_has_a_due_date(db_session):
+    site = _site(db_session)
+    _task(db_session, site.id, EMAIL, target_date=None, title="Undated")
+
+    assert _calendar_months_for_tasks(_tasks_for_assignee(db_session, EMAIL)) == []

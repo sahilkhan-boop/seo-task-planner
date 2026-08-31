@@ -20,6 +20,9 @@
         {% endfor %}
       </select>
       <button type="submit">Filter</button>
+      <a class="button secondary" href="/my-tasks/calendar?status={{ filters.status }}">Calendar view →</a>
+      <a class="button secondary" href="/my-tasks/calendar.pdf">Download PDF →</a>
+      <a class="button secondary" href="/my-tasks/calendar.xlsx">Download Excel →</a>
     </form>
 
     {% if other_assignees %}
@@ -44,7 +47,7 @@
 
     {% if tasks %}
       <section class="card month-block">
-        <table class="table task-plan-table">
+        <table class="table my-tasks-table">
           <thead>
             <tr>
               <th>Site</th><th>Date</th><th>Category</th><th>Task</th><th>Description / Logic</th>
@@ -55,7 +58,7 @@
             {% for t in tasks %}
             {% set site = sites_by_id.get(t.site_id) %}
             <tr class="{{ 'opt-row-' ~ t.optimization_level if t.optimization_level else 'severity-row-' ~ t.severity }}">
-              <td>{{ site.domain if site else ("Site #" ~ t.site_id) }}</td>
+              <td title="{{ site.domain if site else '' }}">{{ (site.domain | short_site_label) if site else ("Site #" ~ t.site_id) }}</td>
               <td>
                 <form method="post" action="/sites/{{ t.site_id }}/tasks/{{ t.id }}/due-date">
                   <input type="hidden" name="redirect_to" value="/my-tasks" />
