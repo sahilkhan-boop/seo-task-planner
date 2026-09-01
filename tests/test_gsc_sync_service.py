@@ -3,7 +3,7 @@ import datetime as dt
 import pytest
 
 from app import services
-from app.models import Benchmark, Campaign, Connection, MetricSnapshot, Site, Task
+from app.models import Benchmark, Campaign, Connection, MetricSnapshot, Site, SiteMetricDaily, Task
 from app.services import NoConnectionError, sync_gsc_and_generate_tasks
 
 FAKE_PAGE_ROWS = [
@@ -32,10 +32,11 @@ def _make_connection(db_session, site_id):
     return conn
 
 
-def _patch_fetches(monkeypatch, page_rows=FAKE_PAGE_ROWS, query_rows=None):
+def _patch_fetches(monkeypatch, page_rows=FAKE_PAGE_ROWS, query_rows=None, site_totals=None):
     monkeypatch.setattr(services, "get_valid_access_token", lambda conn: "fake-token")
     monkeypatch.setattr(services, "fetch_page_analytics", lambda *a, **k: page_rows)
     monkeypatch.setattr(services, "fetch_page_query_analytics", lambda *a, **k: query_rows or [])
+    monkeypatch.setattr(services, "fetch_gsc_site_totals", lambda *a, **k: site_totals or [])
 
 
 def test_raises_when_no_connection(db_session):
@@ -73,6 +74,42 @@ def test_happy_path_persists_snapshots_and_generates_tasks(db_session, monkeypat
     assert len(tasks) == 1
     assert tasks[0].affected_urls == ["https://example.com/a"]
     assert tasks[0].category == "meta_tag_reoptimization"  # position 2.0 -> tier 1
+
+
+def test_site_wide_daily_totals_are_upserted(db_session, monkeypatch):
+    site = _make_site(db_session)
+    _make_connection(db_session, site.id)
+    db_session.commit()
+
+    site_totals = [
+        {"date": dt.date(2026, 8, 29), "clicks": 150, "impressions": 3000},
+        {"date": dt.date(2026, 8, 30), "clicks": 200, "impressions": 4000},
+    ]
+    _patch_fetches(monkeypatch, site_totals=site_totals)
+
+    sync_gsc_and_generate_tasks(db_session, site.id)
+
+    rows = db_session.query(SiteMetricDaily).filter(SiteMetricDaily.site_id == site.id).all()
+    by_key = {(r.date, r.metric_key): r.value for r in rows}
+    assert by_key[(dt.date(2026, 8, 29), "clicks")] == 150
+    assert by_key[(dt.date(2026, 8, 30), "impressions")] == 4000
+
+
+def test_rerunning_sync_upserts_site_wide_totals_instead_of_duplicating(db_session, monkeypatch):
+    site = _make_site(db_session)
+    _make_connection(db_session, site.id)
+    db_session.commit()
+
+    _patch_fetches(monkeypatch, site_totals=[{"date": dt.date(2026, 8, 30), "clicks": 100, "impressions": 1000}])
+    sync_gsc_and_generate_tasks(db_session, site.id)
+    _patch_fetches(monkeypatch, site_totals=[{"date": dt.date(2026, 8, 30), "clicks": 250, "impressions": 1000}])
+    sync_gsc_and_generate_tasks(db_session, site.id)
+
+    rows = db_session.query(SiteMetricDaily).filter(
+        SiteMetricDaily.site_id == site.id, SiteMetricDaily.metric_key == "clicks"
+    ).all()
+    assert len(rows) == 1  # corrected, not duplicated
+    assert rows[0].value == 250
 
 
 def test_rerunning_sync_clears_old_gsc_tasks_idempotently(db_session, monkeypatch):

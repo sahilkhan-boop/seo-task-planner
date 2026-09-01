@@ -401,6 +401,13 @@ details summary:hover { color: var(--accent); }
 
 /* ---------- Overview at-a-glance ---------- */
 .setup-banner { text-align: center; }
+/* Volume-benchmark warning banner (see site_dashboard.html/benchmarks.html) --
+   a flagged site-wide daily/weekly/monthly trend, e.g. "clicks dropped below
+   200". Same red-family tokens as severity-high, but a full card rather than
+   a small badge -- this is meant to actually be noticed. */
+.volume-warning-banner { border-color: var(--high); background: var(--high-tint); margin-bottom: 14px; }
+.volume-warning-banner h2 { margin-top: 0; color: var(--high-text); }
+.volume-warning-banner p { margin: 4px 0; }
 .glance-row { display: flex; flex-wrap: wrap; gap: 32px; margin: 10px 0; }
 .glance-row > div { display: flex; flex-direction: column; gap: 6px; }
 .glance-label { color: var(--muted-2); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }

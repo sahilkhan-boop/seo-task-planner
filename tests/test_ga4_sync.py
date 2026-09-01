@@ -2,7 +2,12 @@ import datetime as dt
 
 import httpx
 
-from app.ingestion.ga4_sync import fetch_ga4_properties, fetch_mobile_share, fetch_page_metrics
+from app.ingestion.ga4_sync import (
+    fetch_ga4_properties,
+    fetch_mobile_share,
+    fetch_page_metrics,
+    fetch_site_totals_by_date,
+)
 
 
 class _FakeResponse:
@@ -98,6 +103,39 @@ def test_fetch_mobile_share_omits_pages_with_zero_total_sessions(monkeypatch):
     monkeypatch.setattr(httpx, "post", fake_post)
     shares = fetch_mobile_share("token", "123", dt.date(2026, 7, 1), dt.date(2026, 7, 28))
     assert shares == {}
+
+
+# ---------- fetch_site_totals_by_date (feeds VolumeBenchmark, see rules/volume_rules.py) ----------
+
+
+def test_fetch_site_totals_by_date_dimensions_by_date_only(monkeypatch):
+    captured = {}
+
+    def fake_post(url, headers, json, timeout):
+        captured["json"] = json
+        return _FakeResponse(
+            {
+                "rows": [
+                    {"dimensionValues": [{"value": "20260829"}], "metricValues": [{"value": "500"}, {"value": "350"}]},
+                    {"dimensionValues": [{"value": "20260830"}], "metricValues": [{"value": "600"}, {"value": "400"}]},
+                ]
+            }
+        )
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    rows = fetch_site_totals_by_date("token-abc", "123456789", dt.date(2026, 8, 29), dt.date(2026, 8, 30))
+
+    assert rows == [
+        {"date": dt.date(2026, 8, 29), "sessions": 500, "active_users": 350},
+        {"date": dt.date(2026, 8, 30), "sessions": 600, "active_users": 400},
+    ]
+    assert captured["json"]["dimensions"] == [{"name": "date"}]
+
+
+def test_fetch_site_totals_by_date_returns_empty_list_when_no_rows(monkeypatch):
+    monkeypatch.setattr(httpx, "post", lambda *a, **k: _FakeResponse({}))
+    rows = fetch_site_totals_by_date("token", "123", dt.date(2026, 8, 1), dt.date(2026, 8, 30))
+    assert rows == []
 
 
 # ---------- fetch_ga4_properties (see routers/setup.py's property picker) ----------

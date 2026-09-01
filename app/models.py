@@ -143,6 +143,59 @@ class Benchmark(Base):
     site: Mapped[Site] = relationship(back_populates="benchmarks")
 
 
+class VolumeBenchmark(Base):
+    """A site-wide volume/trend threshold, checked once its period closes -- e.g.
+    "flag when total clicks for the whole site, for the day, are below 200."
+
+    A genuinely different check from Benchmark above: that one compares a RATIO
+    (CTR, engagement_rate...) computed PER PAGE against one fixed rolling ~28-day
+    window. This compares a raw COUNT (clicks, impressions, sessions...) totaled
+    SITE-WIDE over a specific calendar day/week/month, only once that period has
+    fully closed -- so it needs its own `period` dimension Benchmark has no
+    equivalent of. Its own table rather than a column added to Benchmark so this
+    ships as a brand-new table (auto-created by Base.metadata.create_all on
+    deploy) instead of needing a manual ALTER TABLE run against production.
+
+    comparator: "lt" (flag when actual < target -> traffic dropped) or
+                "gt" (flag when actual > target -- rare for a volume metric, but
+                kept symmetric with Benchmark's comparator for consistency).
+    period: "daily" | "weekly" | "monthly" -- which of the most-recently-CLOSED
+            calendar day/week(Mon-Sun)/month this gets checked against. See
+            app/rules/volume_rules.py for how "closed" is determined.
+    """
+
+    __tablename__ = "volume_benchmarks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    site_id: Mapped[int] = mapped_column(ForeignKey("sites.id"))
+    source: Mapped[str] = mapped_column(String)  # "gsc" | "ga4"
+    metric_key: Mapped[str] = mapped_column(String)  # "clicks" | "impressions" | "sessions" | "active_users"
+    period: Mapped[str] = mapped_column(String)  # "daily" | "weekly" | "monthly"
+    comparator: Mapped[str] = mapped_column(String, default="lt")  # "lt" | "gt"
+    target_value: Mapped[float] = mapped_column(Float)
+
+
+class SiteMetricDaily(Base):
+    """Site-wide (never per-page) daily total for one GSC/GA4 metric -- the raw
+    material VolumeBenchmark checks (above) are evaluated against. Deliberately
+    separate from MetricSnapshot, which is a monthly rollup keyed per-page/url --
+    neither the day-level granularity nor the site-wide (no url) shape fit there.
+
+    One row per site+source+metric_key+date -- a re-synced day overwrites its
+    existing row (see services.py's sync functions) rather than accumulating
+    duplicates, unlike MetricSnapshot's intentional historical-log behavior.
+    """
+
+    __tablename__ = "site_metric_daily"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    site_id: Mapped[int] = mapped_column(ForeignKey("sites.id"))
+    source: Mapped[str] = mapped_column(String)  # "gsc" | "ga4"
+    metric_key: Mapped[str] = mapped_column(String)  # "clicks" | "impressions" | "sessions" | "active_users"
+    date: Mapped[dt.date] = mapped_column(Date)
+    value: Mapped[float] = mapped_column(Float)
+
+
 class MetricSnapshot(Base):
     """Monthly rollup of a GSC/GA4 metric per URL (or site-wide when url is null)."""
 

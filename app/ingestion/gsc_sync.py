@@ -61,6 +61,41 @@ def fetch_page_analytics(
     ]
 
 
+def fetch_site_totals_by_date(
+    access_token: str, site_url: str, start_date: dt.date, end_date: dt.date, row_limit: int = 1000
+) -> list[dict]:
+    """Same endpoint, but dimensioned by day alone (no "page") -- one row per
+    calendar date with the WHOLE SITE's totals, not one row per page. Feeds
+    SiteMetricDaily/VolumeBenchmark's site-wide daily/weekly/monthly trend
+    checks (see rules/volume_rules.py) -- fetch_page_analytics's per-page rows
+    can't answer "what were total clicks for the whole site yesterday" without
+    summing every page, and even then only over its one fixed date range.
+    Returns [{"date": date, "clicks": int, "impressions": int}, ...].
+    """
+    url = SEARCH_ANALYTICS_URL_TEMPLATE.format(site_url=quote(site_url, safe=""))
+    resp = httpx.post(
+        url,
+        headers={"Authorization": f"Bearer {access_token}"},
+        json={
+            "startDate": start_date.isoformat(),
+            "endDate": end_date.isoformat(),
+            "dimensions": ["date"],
+            "rowLimit": row_limit,
+        },
+        timeout=30,
+    )
+    resp.raise_for_status()
+    rows = resp.json().get("rows", [])
+    return [
+        {
+            "date": dt.date.fromisoformat(row["keys"][0]),
+            "clicks": row.get("clicks", 0),
+            "impressions": row.get("impressions", 0),
+        }
+        for row in rows
+    ]
+
+
 def fetch_page_query_analytics(
     access_token: str, site_url: str, start_date: dt.date, end_date: dt.date, row_limit: int = 25000
 ) -> list[dict]:

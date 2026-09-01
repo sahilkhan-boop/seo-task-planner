@@ -55,6 +55,7 @@ def test_happy_path_persists_snapshots_and_generates_tasks(db_session, monkeypat
     monkeypatch.setattr(services, "get_valid_access_token", lambda conn: "fake-token")
     monkeypatch.setattr(services, "fetch_page_metrics", lambda *a, **k: FAKE_PAGE_ROWS)
     monkeypatch.setattr(services, "fetch_mobile_share", lambda *a, **k: FAKE_MOBILE_SHARE)
+    monkeypatch.setattr(services, "fetch_ga4_site_totals", lambda *a, **k: [])
 
     result = sync_ga4_and_generate_tasks(db_session, site.id)
 
@@ -82,6 +83,7 @@ def test_rerunning_sync_clears_old_ga4_tasks_idempotently(db_session, monkeypatc
     monkeypatch.setattr(services, "get_valid_access_token", lambda conn: "fake-token")
     monkeypatch.setattr(services, "fetch_page_metrics", lambda *a, **k: FAKE_PAGE_ROWS)
     monkeypatch.setattr(services, "fetch_mobile_share", lambda *a, **k: FAKE_MOBILE_SHARE)
+    monkeypatch.setattr(services, "fetch_ga4_site_totals", lambda *a, **k: [])
 
     sync_ga4_and_generate_tasks(db_session, site.id)
     sync_ga4_and_generate_tasks(db_session, site.id)
@@ -100,6 +102,7 @@ def test_does_not_touch_non_ga4_tasks(db_session, monkeypatch):
     monkeypatch.setattr(services, "get_valid_access_token", lambda conn: "fake-token")
     monkeypatch.setattr(services, "fetch_page_metrics", lambda *a, **k: FAKE_PAGE_ROWS)
     monkeypatch.setattr(services, "fetch_mobile_share", lambda *a, **k: FAKE_MOBILE_SHARE)
+    monkeypatch.setattr(services, "fetch_ga4_site_totals", lambda *a, **k: [])
 
     sync_ga4_and_generate_tasks(db_session, site.id)
 
@@ -117,6 +120,7 @@ def test_schedules_from_today_not_campaign_start(db_session, monkeypatch):
     monkeypatch.setattr(services, "get_valid_access_token", lambda conn: "fake-token")
     monkeypatch.setattr(services, "fetch_page_metrics", lambda *a, **k: FAKE_PAGE_ROWS)
     monkeypatch.setattr(services, "fetch_mobile_share", lambda *a, **k: FAKE_MOBILE_SHARE)
+    monkeypatch.setattr(services, "fetch_ga4_site_totals", lambda *a, **k: [])
 
     sync_ga4_and_generate_tasks(db_session, site.id)
 

@@ -215,14 +215,15 @@ and sync, the plan-chat tool layer, and a full pipeline integration test.
 
 ```
 app/
-  models.py            # Site, Campaign, Connection, Benchmark, MetricSnapshot,
-                        # CrawlImport, CrawlIssue, Task
+  models.py            # Site, Campaign, Connection, Benchmark, VolumeBenchmark,
+                        # MetricSnapshot, SiteMetricDaily, CrawlImport, CrawlIssue, Task
   ingestion/screaming_frog.py   # CSV parsing
-  ingestion/gsc_sync.py         # GSC Search Analytics REST calls (page + page/query)
-  ingestion/ga4_sync.py         # GA4 Analytics Data API REST calls (page metrics + device split)
+  ingestion/gsc_sync.py         # GSC Search Analytics REST calls (page, page/query, site-wide by date)
+  ingestion/ga4_sync.py         # GA4 Analytics Data API REST calls (page metrics, device split, site-wide by date)
   rules/crawl_rules.py          # issue -> Task rule engine
   rules/gsc_rules.py            # 3-tier existing-page-optimization rule engine
   rules/ga4_rules.py            # UI/UX review, exit rate, mobile share, key events
+  rules/volume_rules.py         # site-wide daily/weekly/monthly volume-trend benchmark checks
   scheduling/timeline.py        # Task -> month/day placement + priority tiers
   services.py                   # glue: import/sync -> rules -> schedule -> persist
   routers/                      # FastAPI routes

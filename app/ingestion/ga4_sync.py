@@ -92,6 +92,37 @@ def fetch_page_metrics(
     return results
 
 
+def fetch_site_totals_by_date(
+    access_token: str, property_id: str, start_date: dt.date, end_date: dt.date, row_limit: int = 1000
+) -> list[dict]:
+    """Same report endpoint as fetch_page_metrics, but dimensioned by day alone
+    (no "pagePath") -- one row per calendar date with the WHOLE PROPERTY's
+    totals, not one row per page. Feeds SiteMetricDaily/VolumeBenchmark's
+    site-wide daily/weekly/monthly trend checks (see rules/volume_rules.py).
+    GA4's "date" dimension comes back as "YYYYMMDD" (no dashes), unlike GSC's
+    ISO-formatted dates -- parsed accordingly below.
+    Returns [{"date": date, "sessions": int, "active_users": int}, ...].
+    """
+    body = {
+        "dateRanges": [{"startDate": start_date.isoformat(), "endDate": end_date.isoformat()}],
+        "dimensions": [{"name": "date"}],
+        "metrics": [{"name": "sessions"}, {"name": "activeUsers"}],
+        "limit": row_limit,
+    }
+    data = _run_report(access_token, property_id, body)
+    results = []
+    for row in data.get("rows", []):
+        date_str = row["dimensionValues"][0]["value"]
+        results.append(
+            {
+                "date": dt.datetime.strptime(date_str, "%Y%m%d").date(),
+                "sessions": int(float(row["metricValues"][0]["value"])),
+                "active_users": int(float(row["metricValues"][1]["value"])),
+            }
+        )
+    return results
+
+
 def fetch_mobile_share(
     access_token: str, property_id: str, start_date: dt.date, end_date: dt.date, row_limit: int = 10000
 ) -> dict[str, float]:

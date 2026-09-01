@@ -2,7 +2,12 @@ import datetime as dt
 
 import httpx
 
-from app.ingestion.gsc_sync import fetch_gsc_properties, fetch_page_analytics, fetch_page_query_analytics
+from app.ingestion.gsc_sync import (
+    fetch_gsc_properties,
+    fetch_page_analytics,
+    fetch_page_query_analytics,
+    fetch_site_totals_by_date,
+)
 
 
 class _FakeResponse:
@@ -90,6 +95,39 @@ def test_fetch_page_query_analytics_dimensions_by_page_and_query(monkeypatch):
 def test_fetch_page_query_analytics_returns_empty_list_when_no_rows(monkeypatch):
     monkeypatch.setattr(httpx, "post", lambda *a, **k: _FakeResponse({}))
     rows = fetch_page_query_analytics("token", "https://example.com/", dt.date(2026, 7, 1), dt.date(2026, 7, 28))
+    assert rows == []
+
+
+# ---------- fetch_site_totals_by_date (feeds VolumeBenchmark, see rules/volume_rules.py) ----------
+
+
+def test_fetch_site_totals_by_date_dimensions_by_date_only(monkeypatch):
+    captured = {}
+
+    def fake_post(url, headers, json, timeout):
+        captured["json"] = json
+        return _FakeResponse(
+            {
+                "rows": [
+                    {"keys": ["2026-08-29"], "clicks": 150, "impressions": 3000},
+                    {"keys": ["2026-08-30"], "clicks": 200, "impressions": 4000},
+                ]
+            }
+        )
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    rows = fetch_site_totals_by_date("token-abc", "https://example.com/", dt.date(2026, 8, 29), dt.date(2026, 8, 30))
+
+    assert rows == [
+        {"date": dt.date(2026, 8, 29), "clicks": 150, "impressions": 3000},
+        {"date": dt.date(2026, 8, 30), "clicks": 200, "impressions": 4000},
+    ]
+    assert captured["json"]["dimensions"] == ["date"]
+
+
+def test_fetch_site_totals_by_date_returns_empty_list_when_no_rows(monkeypatch):
+    monkeypatch.setattr(httpx, "post", lambda *a, **k: _FakeResponse({}))
+    rows = fetch_site_totals_by_date("token", "https://example.com/", dt.date(2026, 8, 1), dt.date(2026, 8, 30))
     assert rows == []
 
 

@@ -12,10 +12,25 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.google_oauth import get_valid_access_token
-from app.ingestion.ga4_sync import fetch_mobile_share, fetch_page_metrics
-from app.ingestion.gsc_sync import fetch_page_analytics, fetch_page_query_analytics
+from app.ingestion.ga4_sync import fetch_mobile_share, fetch_page_metrics, fetch_site_totals_by_date as fetch_ga4_site_totals
+from app.ingestion.gsc_sync import (
+    fetch_page_analytics,
+    fetch_page_query_analytics,
+    fetch_site_totals_by_date as fetch_gsc_site_totals,
+)
 from app.ingestion.screaming_frog import import_crawl_folder
-from app.models import Benchmark, Campaign, Connection, CrawlImport, CrawlIssue, MetricSnapshot, Site, Task
+from app.models import (
+    Benchmark,
+    Campaign,
+    Connection,
+    CrawlImport,
+    CrawlIssue,
+    MetricSnapshot,
+    Site,
+    SiteMetricDaily,
+    Task,
+    VolumeBenchmark,
+)
 from app.rules.content_rules import generate_benchmarking_task, generate_content_plan
 from app.rules.crawl_rules import consolidate_technical_tasks, generate_crawl_tasks, generate_indexation_blocking_tasks
 from app.rules.ga4_rules import generate_ga4_tasks
@@ -23,8 +38,53 @@ from app.rules.gsc_rules import generate_gsc_tasks
 from app.rules.optimization_levels import STANDING_TASK_CATEGORIES, default_optimization_level
 from app.rules.reporting_rules import generate_reporting_tasks
 from app.rules.task_hours import estimated_hours_for
+from app.rules.volume_rules import evaluate_volume_benchmarks
 from app.scheduling.month_utils import add_months
 from app.scheduling.timeline import assign_schedule
+
+# How far back each sync fetches site-wide daily totals (see _upsert_site_metric_daily
+# below) -- needs to comfortably cover a full closed calendar month (up to 31 days)
+# even in the worst case where the latest synced day is the 1st of a month, meaning
+# the whole PREVIOUS month (up to 31 days further back) is what VolumeBenchmark's
+# monthly check needs. 40 gives real slack over the 31+1 minimum.
+VOLUME_TREND_LOOKBACK_DAYS = 40
+
+
+def _upsert_site_metric_daily(db: Session, site_id: int, source: str, rows: list[dict], metric_keys: list[str]) -> None:
+    """Delete-then-insert for the fetched date range -- a re-synced day overwrites
+    its existing row instead of accumulating duplicates, unlike MetricSnapshot's
+    intentional historical-log behavior (see SiteMetricDaily's own docstring)."""
+    if not rows:
+        return
+    dates = [row["date"] for row in rows]
+    db.query(SiteMetricDaily).filter(
+        SiteMetricDaily.site_id == site_id,
+        SiteMetricDaily.source == source,
+        SiteMetricDaily.metric_key.in_(metric_keys),
+        SiteMetricDaily.date.in_(dates),
+    ).delete(synchronize_session="fetch")
+    db.flush()
+    for row in rows:
+        for key in metric_keys:
+            if key in row:
+                db.add(SiteMetricDaily(site_id=site_id, source=source, metric_key=key, date=row["date"], value=row[key]))
+
+
+def evaluate_site_volume_benchmarks(db: Session, site_id: int) -> list[dict]:
+    """Every VolumeBenchmark configured for this site, evaluated against its
+    latest closed period (see rules/volume_rules.py) -- flagged ones first.
+    Purely a read; nothing here is cached/stored, so it's always current as of
+    whatever's actually been synced. Used by both the Benchmarks page (the full
+    list) and the Overview page (just the flagged ones, as a warning banner).
+    """
+    benchmarks = db.scalars(select(VolumeBenchmark).where(VolumeBenchmark.site_id == site_id)).all()
+    if not benchmarks:
+        return []
+    daily_rows = db.scalars(select(SiteMetricDaily).where(SiteMetricDaily.site_id == site_id)).all()
+    daily_rows_by_key: dict[tuple[str, str], list[SiteMetricDaily]] = {}
+    for row in daily_rows:
+        daily_rows_by_key.setdefault((row.source, row.metric_key), []).append(row)
+    return evaluate_volume_benchmarks(benchmarks, daily_rows_by_key)
 
 
 def _dates_occupied_by_other_sources(db: Session, site_id: int, source: str) -> frozenset[dt.date]:
@@ -735,6 +795,10 @@ def sync_gsc_and_generate_tasks(db: Session, site_id: int) -> dict:
     crawl-issue tasks (which anchor to campaign start because they're a one-time
     backlog), CTR data reflects the site's current state and should be worked
     starting now.
+
+    Also fetches/upserts site-wide daily clicks+impressions totals (SiteMetricDaily)
+    over a wider window, feeding any configured VolumeBenchmark rows -- unrelated to
+    the per-page task generation above.
     """
     site = db.get(Site, site_id)
     connection = find_connection(db, site_id, "gsc")
@@ -750,6 +814,14 @@ def sync_gsc_and_generate_tasks(db: Session, site_id: int) -> dict:
     start_date = end_date - dt.timedelta(days=27)
     page_rows = fetch_page_analytics(access_token, site.gsc_site_url, start_date, end_date)
     query_rows = fetch_page_query_analytics(access_token, site.gsc_site_url, start_date, end_date)
+
+    # Separate, wider-window fetch feeding VolumeBenchmark's site-wide daily/weekly/
+    # monthly trend checks -- unrelated to the page-level rows/tasks above, which stay
+    # on their existing 28-day window.
+    site_totals = fetch_gsc_site_totals(
+        access_token, site.gsc_site_url, end_date - dt.timedelta(days=VOLUME_TREND_LOOKBACK_DAYS), end_date
+    )
+    _upsert_site_metric_daily(db, site_id, "gsc", site_totals, ["clicks", "impressions"])
 
     month = start_date.replace(day=1)
     for row in page_rows:
@@ -829,6 +901,10 @@ def sync_ga4_and_generate_tasks(db: Session, site_id: int) -> dict:
 
     Like GSC tasks, these are scheduled from *today* -- they reflect the site's
     current behavioral state, not a one-time backlog anchored to campaign start.
+
+    Also fetches/upserts site-wide daily sessions+active_users totals
+    (SiteMetricDaily) over a wider window, feeding any configured VolumeBenchmark
+    rows -- unrelated to the per-page task generation above.
     """
     site = db.get(Site, site_id)
     connection = find_connection(db, site_id, "ga4")
@@ -844,6 +920,14 @@ def sync_ga4_and_generate_tasks(db: Session, site_id: int) -> dict:
     start_date = end_date - dt.timedelta(days=27)
     page_rows = fetch_page_metrics(access_token, site.ga4_property_id, start_date, end_date)
     mobile_share_by_page = fetch_mobile_share(access_token, site.ga4_property_id, start_date, end_date)
+
+    # Separate, wider-window fetch feeding VolumeBenchmark's site-wide daily/weekly/
+    # monthly trend checks -- unrelated to the page-level rows/tasks above, which stay
+    # on their existing 28-day window.
+    site_totals = fetch_ga4_site_totals(
+        access_token, site.ga4_property_id, end_date - dt.timedelta(days=VOLUME_TREND_LOOKBACK_DAYS), end_date
+    )
+    _upsert_site_metric_daily(db, site_id, "ga4", site_totals, ["sessions", "active_users"])
 
     month = start_date.replace(day=1)
     for row in page_rows:

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models import Campaign, CrawlImport, Site, Task
 from app.rules.optimization_levels import OPTIMIZATION_LEVEL_LABELS, OPTIMIZATION_LEVELS, default_optimization_level
+from app.services import evaluate_site_volume_benchmarks
 from app.templating import templates
 
 router = APIRouter()
@@ -65,6 +66,11 @@ def site_dashboard(site_id: int, request: Request, db: Session = Depends(get_db)
         select(CrawlImport).where(CrawlImport.site_id == site_id).order_by(CrawlImport.imported_at.desc()).limit(5)
     ).all()
 
+    # Only the currently-flagged ones -- this is a warning banner, not a status
+    # report, so an "all clear" volume benchmark stays quiet here (see it on the
+    # Benchmarks page instead, which lists every one regardless of state).
+    volume_warnings = [w for w in evaluate_site_volume_benchmarks(db, site_id) if w["flagged"]]
+
     return templates.TemplateResponse(
         request,
         "site_dashboard.html",
@@ -78,5 +84,6 @@ def site_dashboard(site_id: int, request: Request, db: Session = Depends(get_db)
             "optimization_level_labels": OPTIMIZATION_LEVEL_LABELS,
             "recent_imports": recent_imports,
             "total_tasks": sum(status_counts.values()),
+            "volume_warnings": volume_warnings,
         },
     )

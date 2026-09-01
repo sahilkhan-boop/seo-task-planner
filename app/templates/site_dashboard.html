@@ -3,6 +3,22 @@
 {% block content %}
   <h1>{{ site.domain }}</h1>
 
+  {% if volume_warnings %}
+    <section class="card volume-warning-banner">
+      <h2>⚠ Traffic below benchmark</h2>
+      {% for w in volume_warnings %}
+        <p>
+          <strong>{{ w.benchmark.source | upper }} {{ w.benchmark.metric_key }}</strong>
+          ({{ w.benchmark.period }}, {{ w.period_label }}): actual <strong>{{ w.actual | round(1) }}</strong>
+          vs. target <strong>{{ w.benchmark.target_value }}</strong>.
+        </p>
+      {% endfor %}
+      <p class="muted" style="font-size: 0.85rem; margin-bottom: 0;">
+        See <a href="/sites/{{ site.id }}/benchmarks">Benchmarks</a> to review or adjust these.
+      </p>
+    </section>
+  {% endif %}
+
   {% if not campaign %}
     <section class="card setup-banner">
       <h2>Finish setting up {{ site.domain }}</h2>

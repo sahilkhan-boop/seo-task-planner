@@ -71,4 +71,99 @@
       <p class="muted">No benchmarks yet — seed the defaults above or add your own.</p>
     {% endif %}
   </section>
+
+  <hr style="margin: 32px 0; border: none; border-top: 1px solid var(--border);" />
+
+  <h1>Volume &amp; trend benchmarks</h1>
+  <p class="muted">
+    A different kind of check from the per-page benchmarks above: a raw <strong>site-wide total</strong>
+    (clicks, impressions, sessions, active users) for a specific <strong>day, week, or month</strong> —
+    checked once that period closes, e.g. <em>"flag when total clicks for the day drop below 200."</em>
+  </p>
+
+  {% if volume_warnings %}
+    <section class="card volume-warning-banner">
+      <h2>⚠ Currently flagged</h2>
+      {% for w in volume_warnings %}
+        <p>
+          <strong>{{ w.benchmark.source | upper }} {{ w.benchmark.metric_key }}</strong>
+          ({{ w.benchmark.period }}, {{ w.period_label }}): actual <strong>{{ w.actual | round(1) }}</strong>
+          vs. target <strong>{{ w.benchmark.target_value }}</strong>.
+        </p>
+      {% endfor %}
+    </section>
+  {% endif %}
+
+  <section class="card">
+    <h2>Add a volume benchmark</h2>
+    <form method="post" action="/sites/{{ site.id }}/volume-benchmarks" class="form-grid">
+      <label>Metric
+        <select name="metric" required>
+          {% for source, keys in volume_metric_keys_by_source.items() %}
+            {% for key in keys %}
+              <option value="{{ source }}:{{ key }}">{{ key.replace("_", " ") | capitalize }} ({{ source | upper }})</option>
+            {% endfor %}
+          {% endfor %}
+        </select>
+      </label>
+      <label>Period
+        <select name="period">
+          <option value="daily">Daily</option>
+          <option value="weekly">Weekly (Mon–Sun)</option>
+          <option value="monthly">Monthly (calendar month)</option>
+        </select>
+      </label>
+      <label>Comparator
+        <select name="comparator">
+          <option value="lt">Flag when actual is below target (lt)</option>
+          <option value="gt">Flag when actual is above target (gt)</option>
+        </select>
+      </label>
+      <label>Target value
+        <input type="number" step="1" name="target_value" required />
+      </label>
+      <button type="submit">Add volume benchmark</button>
+    </form>
+  </section>
+
+  <section>
+    <h2>Configured volume benchmarks</h2>
+    {% if volume_benchmarks %}
+      <p class="muted">
+        Checked once its period closes — a daily one against yesterday's total, a weekly one against the
+        most recently completed Mon–Sun week, a monthly one against the most recently completed calendar
+        month. Shows "no data yet" until enough days have synced to fill that period.
+      </p>
+      <table class="table">
+        <thead><tr><th>Metric</th><th>Period</th><th>Rule</th><th>Target</th><th>Current status</th><th></th></tr></thead>
+        <tbody>
+          {% for b in volume_benchmarks %}
+          {% set current = volume_evaluations_by_id.get(b.id) %}
+          <tr>
+            <td>{{ b.metric_key }} ({{ b.source | upper }})</td>
+            <td>{{ b.period }}</td>
+            <td>{{ "actual < target" if b.comparator == "lt" else "actual > target" }}</td>
+            <td>{{ b.target_value }}</td>
+            <td>
+              {% if not current %}
+                <span class="muted">No data yet</span>
+              {% elif current.flagged %}
+                <span class="badge severity-high">{{ current.actual | round(1) }} ({{ current.period_label }})</span>
+              {% else %}
+                <span class="badge severity-low">{{ current.actual | round(1) }} ({{ current.period_label }})</span>
+              {% endif %}
+            </td>
+            <td>
+              <form method="post" action="/volume-benchmarks/{{ b.id }}/delete" style="display:inline">
+                <button type="submit" class="danger">Delete</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="muted">No volume benchmarks yet — add one above.</p>
+    {% endif %}
+  </section>
 {% endblock %}
