@@ -13,6 +13,12 @@
     </p>
 
     <form method="get" class="filter-bar">
+      <select name="site_id">
+        <option value="">All projects</option>
+        {% for s in all_sites %}
+          <option value="{{ s.id }}" {{ "selected" if filters.site_id == s.id else "" }}>{{ s.domain | short_site_label }}</option>
+        {% endfor %}
+      </select>
       <select name="status">
         <option value="">All statuses</option>
         {% for s in ["todo", "in_progress", "done"] %}
@@ -32,7 +38,7 @@
         {% endfor %}
       </select>
       <button type="submit">Filter</button>
-      <a class="button secondary" href="/my-tasks/calendar?status={{ filters.status }}&severity={{ filters.severity }}&optimization_level={{ filters.optimization_level }}">Calendar view →</a>
+      <a class="button secondary" href="/my-tasks/calendar?status={{ filters.status }}&severity={{ filters.severity }}&optimization_level={{ filters.optimization_level }}&site_id={{ filters.site_id }}">Calendar view →</a>
       <a class="button secondary" href="/my-tasks/calendar.pdf">Download PDF →</a>
       <a class="button secondary" href="/my-tasks/calendar.xlsx">Download Excel →</a>
     </form>

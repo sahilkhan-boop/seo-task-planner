@@ -14,6 +14,12 @@
     <p class="muted">Log in to see the tasks assigned to you across every site.</p>
   {% else %}
     <form method="get" class="filter-bar">
+      <select name="site_id" onchange="this.form.submit()">
+        <option value="">All projects</option>
+        {% for s in all_sites %}
+          <option value="{{ s.id }}" {{ "selected" if filters.site_id == s.id else "" }}>{{ s.domain | short_site_label }}</option>
+        {% endfor %}
+      </select>
       <select name="status" onchange="this.form.submit()">
         <option value="">All statuses</option>
         {% for s in ["todo", "in_progress", "done"] %}

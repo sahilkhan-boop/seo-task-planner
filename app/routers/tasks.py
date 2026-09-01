@@ -252,6 +252,7 @@ def _tasks_for_assignee(
     status: str | None = None,
     severity: str | None = None,
     optimization_level: str | None = None,
+    site_id: int | None = None,
 ) -> list[Task]:
     """Every other task view in this app is scoped to one site -- someone assigned
     tasks across several client sites (the normal case: see Connection's shared,
@@ -267,6 +268,10 @@ def _tasks_for_assignee(
     email=None (login-optional deployments -- config.LOGIN_REQUIRED off, the
     standalone .exe -- have no session email at all) deliberately matches nothing
     rather than every task site-wide against a blank assignee.
+
+    site_id narrows back down to one project -- the whole point of My Tasks is
+    seeing every site at once, but a person juggling several client sites still
+    sometimes wants just one of them front and center, same as the other filters.
     """
     if not email:
         return []
@@ -277,7 +282,21 @@ def _tasks_for_assignee(
         query = query.where(Task.severity == severity)
     if optimization_level:
         query = query.where(Task.optimization_level == optimization_level)
+    if site_id:
+        query = query.where(Task.site_id == site_id)
     return db.scalars(query.order_by(Task.target_date.is_(None), Task.target_date)).all()
+
+
+def _sites_for_assignee(db: Session, email: str | None) -> list[Site]:
+    """Every project this person has at least one task on -- regardless of the
+    other filters (status/severity/optimization_level) -- so the project dropdown
+    itself doesn't shrink out options as soon as one of those is applied."""
+    if not email:
+        return []
+    site_ids = set(db.scalars(select(Task.site_id).where(Task.assignee == email).distinct()).all())
+    if not site_ids:
+        return []
+    return list(db.scalars(select(Site).where(Site.id.in_(site_ids)).order_by(Site.domain)).all())
 
 
 class _SiteLabeledTask:
@@ -302,8 +321,9 @@ def _labeled_tasks_for_calendar(
     status: str | None = None,
     severity: str | None = None,
     optimization_level: str | None = None,
+    site_id: int | None = None,
 ) -> list:
-    tasks = _tasks_for_assignee(db, email, status, severity, optimization_level)
+    tasks = _tasks_for_assignee(db, email, status, severity, optimization_level, site_id)
     site_ids = {t.site_id for t in tasks}
     sites_by_id = {s.id: s for s in db.scalars(select(Site).where(Site.id.in_(site_ids))).all()} if site_ids else {}
     return [_SiteLabeledTask(t, short_site_label(sites_by_id[t.site_id].domain)) for t in tasks]
@@ -331,10 +351,12 @@ def my_tasks_calendar(
     status: str | None = None,
     severity: str | None = None,
     optimization_level: str | None = None,
+    site_id: int | None = None,
 ):
     email = request.session.get("email")
-    labeled = _labeled_tasks_for_calendar(db, email, status, severity, optimization_level)
+    labeled = _labeled_tasks_for_calendar(db, email, status, severity, optimization_level, site_id)
     months = _calendar_months_for_tasks(labeled)
+    all_sites = _sites_for_assignee(db, email)
 
     return templates.TemplateResponse(
         request,
@@ -346,8 +368,10 @@ def my_tasks_calendar(
             "populated_by": POPULATED_BY,
             "optimization_levels": OPTIMIZATION_LEVELS,
             "optimization_level_labels": OPTIMIZATION_LEVEL_LABELS,
+            "all_sites": all_sites,
             "filters": {
                 "status": status or "", "severity": severity or "", "optimization_level": optimization_level or "",
+                "site_id": site_id or "",
             },
             "total": len(labeled),
         },
@@ -387,9 +411,11 @@ def my_tasks(
     status: str | None = None,
     severity: str | None = None,
     optimization_level: str | None = None,
+    site_id: int | None = None,
 ):
     email = request.session.get("email")
-    tasks = _tasks_for_assignee(db, email, status, severity, optimization_level)
+    tasks = _tasks_for_assignee(db, email, status, severity, optimization_level, site_id)
+    all_sites = _sites_for_assignee(db, email)
 
     site_ids = {t.site_id for t in tasks}
     sites_by_id = {s.id: s for s in db.scalars(select(Site).where(Site.id.in_(site_ids))).all()} if site_ids else {}
@@ -410,11 +436,13 @@ def my_tasks(
             "tasks": tasks,
             "sites_by_id": sites_by_id,
             "other_assignees": other_assignees,
+            "all_sites": all_sites,
             "populated_by": POPULATED_BY,
             "optimization_levels": OPTIMIZATION_LEVELS,
             "optimization_level_labels": OPTIMIZATION_LEVEL_LABELS,
             "filters": {
                 "status": status or "", "severity": severity or "", "optimization_level": optimization_level or "",
+                "site_id": site_id or "",
             },
             "total": len(tasks),
         },

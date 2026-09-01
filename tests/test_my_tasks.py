@@ -11,6 +11,7 @@ from app.routers.tasks import (
     _calendar_months_for_tasks,
     _labeled_tasks_for_calendar,
     _SiteLabeledTask,
+    _sites_for_assignee,
     _tasks_for_assignee,
 )
 from app.templating import short_site_label
@@ -91,6 +92,41 @@ def test_severity_filter_applies_on_top_of_the_assignee_match(db_session):
     result = _tasks_for_assignee(db_session, EMAIL, severity="high")
 
     assert [t.id for t in result] == [high.id]
+
+
+def test_site_id_filter_narrows_back_down_to_one_project(db_session):
+    site_a = _site(db_session, "a.com")
+    site_b = _site(db_session, "b.com")
+    on_a = _task(db_session, site_a.id, EMAIL, title="On A")
+    _task(db_session, site_b.id, EMAIL, title="On B")
+
+    result = _tasks_for_assignee(db_session, EMAIL, site_id=site_a.id)
+
+    assert [t.id for t in result] == [on_a.id]
+
+
+def test_sites_for_assignee_lists_only_projects_with_a_task_for_this_email(db_session):
+    site_a = _site(db_session, "a.com")
+    site_b = _site(db_session, "b.com")
+    site_c = _site(db_session, "c.com")
+    _task(db_session, site_a.id, EMAIL, title="Mine on A")
+    _task(db_session, site_b.id, "someone.else@peppercontent.io", title="Not mine, on B")
+    # site_c has no tasks at all
+
+    result = _sites_for_assignee(db_session, EMAIL)
+
+    assert [s.id for s in result] == [site_a.id]
+
+
+def test_sites_for_assignee_ignores_other_filters(db_session):
+    """The dropdown itself shouldn't shrink just because a status/severity filter
+    is also applied -- it lists every project this person has ANY task on."""
+    site = _site(db_session)
+    _task(db_session, site.id, EMAIL, status="done", title="Done task")
+
+    result = _sites_for_assignee(db_session, EMAIL)
+
+    assert [s.id for s in result] == [site.id]
 
 
 def test_optimization_level_filter_applies_on_top_of_the_assignee_match(db_session):
