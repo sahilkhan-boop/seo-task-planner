@@ -10,6 +10,7 @@ from app.routers.tasks import (
     _bulk_reassign,
     _calendar_months_for_tasks,
     _labeled_tasks_for_calendar,
+    _parse_site_id,
     _SiteLabeledTask,
     _sites_for_assignee,
     _tasks_for_assignee,
@@ -103,6 +104,32 @@ def test_site_id_filter_narrows_back_down_to_one_project(db_session):
     result = _tasks_for_assignee(db_session, EMAIL, site_id=site_a.id)
 
     assert [t.id for t in result] == [on_a.id]
+
+
+# ---------- _parse_site_id ----------
+# Real bug this guards against: the "All projects" <select> option posts
+# site_id="" (present but empty), not an absent param -- declaring the route's
+# own query param as int|None doesn't handle that (FastAPI only defaults to
+# None when the param is missing entirely), so /my-tasks and /my-tasks/calendar
+# 400'd with "unable to parse string as an integer" every time someone picked
+# "All projects" after having picked a real one. Fixed by taking the query
+# param as a plain str and parsing it here instead.
+
+
+def test_parse_site_id_empty_string_is_none():
+    assert _parse_site_id("") is None
+
+
+def test_parse_site_id_whitespace_only_is_none():
+    assert _parse_site_id("   ") is None
+
+
+def test_parse_site_id_parses_a_real_id():
+    assert _parse_site_id("42") == 42
+
+
+def test_parse_site_id_rejects_non_numeric_input_rather_than_raising():
+    assert _parse_site_id("not-a-number") is None
 
 
 def test_sites_for_assignee_lists_only_projects_with_a_task_for_this_email(db_session):

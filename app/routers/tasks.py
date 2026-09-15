@@ -246,6 +246,16 @@ def _redirect_after(site_id: int, redirect_to: str) -> str:
     return f"/sites/{site_id}{suffix}"
 
 
+def _parse_site_id(raw: str) -> int | None:
+    """The "All projects" option in My Tasks' project filter posts site_id=""
+    (an empty string, not an absent param) -- declaring the query param itself
+    as int|None doesn't handle that (FastAPI only defaults to None when the
+    param is missing entirely, not when it's present but empty), so the route
+    takes it as a plain str and converts here instead."""
+    raw = raw.strip()
+    return int(raw) if raw.isdigit() else None
+
+
 def _tasks_for_assignee(
     db: Session,
     email: str | None,
@@ -357,10 +367,14 @@ def my_tasks_calendar(
     status: str | None = None,
     severity: str | None = None,
     optimization_level: str | None = None,
-    site_id: int | None = None,
+    # str, not int -- the "All projects" option posts site_id="" (empty string),
+    # which FastAPI can't coerce into int|None (it only defaults to None when the
+    # param is absent entirely, not when it's present but empty) -- see _parse_site_id.
+    site_id: str = "",
 ):
     email = request.session.get("email")
-    labeled = _labeled_tasks_for_calendar(db, email, status, severity, optimization_level, site_id)
+    site_id_int = _parse_site_id(site_id)
+    labeled = _labeled_tasks_for_calendar(db, email, status, severity, optimization_level, site_id_int)
     months = _calendar_months_for_tasks(labeled)
     all_sites = _sites_for_assignee(db, email)
 
@@ -377,7 +391,7 @@ def my_tasks_calendar(
             "all_sites": all_sites,
             "filters": {
                 "status": status or "", "severity": severity or "", "optimization_level": optimization_level or "",
-                "site_id": site_id or "",
+                "site_id": site_id_int or "",
             },
             "total": len(labeled),
         },
@@ -417,10 +431,12 @@ def my_tasks(
     status: str | None = None,
     severity: str | None = None,
     optimization_level: str | None = None,
-    site_id: int | None = None,
+    # str, not int -- see my_tasks_calendar's own comment on this / _parse_site_id.
+    site_id: str = "",
 ):
     email = request.session.get("email")
-    tasks = _tasks_for_assignee(db, email, status, severity, optimization_level, site_id)
+    site_id_int = _parse_site_id(site_id)
+    tasks = _tasks_for_assignee(db, email, status, severity, optimization_level, site_id_int)
     all_sites = _sites_for_assignee(db, email)
 
     site_ids = {t.site_id for t in tasks}
@@ -448,7 +464,7 @@ def my_tasks(
             "optimization_level_labels": OPTIMIZATION_LEVEL_LABELS,
             "filters": {
                 "status": status or "", "severity": severity or "", "optimization_level": optimization_level or "",
-                "site_id": site_id or "",
+                "site_id": site_id_int or "",
             },
             "total": len(tasks),
         },
