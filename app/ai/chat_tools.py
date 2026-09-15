@@ -13,11 +13,17 @@ on their own; the route always supplies the real site_id from the URL.
 from __future__ import annotations
 
 import datetime as dt
+import re
 
 from sqlalchemy.orm import Session
 
 from app.models import Task
 from app.rules.task_hours import estimated_hours_for
+from app.rules.worksheet_task_hours import (
+    WORKSHEET_TASKS,
+    hours_for_worksheet_task,
+    optimization_level_for_worksheet_task,
+)
 
 TOOLS = [
     {
@@ -92,9 +98,44 @@ TOOLS = [
             "required": ["task_id"],
         },
     },
+    {
+        "name": "plan_tasks_for_urls",
+        "description": (
+            "Given a batch of URLs and which SEO check/fix each one needs, creates one task per "
+            "URL and schedules ALL of them onto the calendar using the site's real analyst capacity "
+            "(an 8-hour workday) and priority phases (benchmarking -> technical audit -> key fixes -> "
+            "quick wins -> ongoing content) -- the exact same capacity-aware scheduler every "
+            "GSC/GA4/crawl-generated task already goes through. This is how planning actually works: "
+            "never pick target_date yourself for a batch like this -- call this tool and let it place "
+            "them. Match each task to one of the known checks by name where possible (e.g. 'Redirect "
+            "chains & loops', 'Canonical tag audit', 'Robots.txt audit') for an accurate time estimate; "
+            "a close free-text description still works, just with a conservative 1-hour default."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "entries": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "url": {"type": "string"},
+                            "task": {
+                                "type": "string",
+                                "description": "Which check/fix this URL needs -- a known worksheet task name if possible.",
+                            },
+                            "severity": {"type": "string", "enum": ["high", "medium", "low"]},
+                        },
+                        "required": ["url", "task"],
+                    },
+                }
+            },
+            "required": ["entries"],
+        },
+    },
 ]
 
-MUTATING_TOOLS = {"create_task", "update_task", "delete_task"}
+MUTATING_TOOLS = {"create_task", "update_task", "delete_task", "plan_tasks_for_urls"}
 
 
 def _month_index(campaign_start: dt.date, target_date: dt.date) -> int:
@@ -198,6 +239,92 @@ def _delete_task(db: Session, site_id: int, tool_input: dict):
     return {"deleted": True}, f'Deleted task #{task_id}: "{title}"'
 
 
+def _match_worksheet_task(task_text: str) -> str | None:
+    """Matches free text against a known worksheet task, by slug or by exact
+    (case-insensitive) name -- lets the model pass either the worksheet's own
+    exact phrasing or a close paraphrase of it and still get a real hours
+    estimate + optimization_level instead of falling through to the generic
+    'custom' default."""
+    text = task_text.strip().lower()
+    slug_guess = re.sub(r"[()/]", " ", text)
+    slug_guess = re.sub(r"[^a-z0-9]+", "_", slug_guess).strip("_")
+    if slug_guess in WORKSHEET_TASKS:
+        return slug_guess
+    for slug, entry in WORKSHEET_TASKS.items():
+        if entry["name"].strip().lower() == text:
+            return slug
+    return None
+
+
+def _plan_tasks_for_urls(db: Session, site_id: int, tool_input: dict):
+    """Creates one Task per {url, task} entry, then hands the whole batch to the
+    same capacity-aware scheduler every other task source uses (services.
+    reschedule_all_tasks) -- this is the actual "planning": nothing here picks a
+    target_date itself, every new task is created unscheduled and manually_
+    scheduled=False specifically so the 8-hour-day/priority-phase scheduler is
+    the one placing it, same as a real GSC/GA4/crawl sync would.
+
+    Local import (not top-level) to keep app.services and app.ai decoupled --
+    services.py has no reason to import anything from here, and this avoids
+    ever having to reason about which one imports the other first.
+    """
+    from app.services import reschedule_all_tasks
+
+    entries = tool_input.get("entries") or []
+    created: list[Task] = []
+    unmatched: list[str] = []
+    for entry in entries:
+        url = entry.get("url")
+        task_text = entry.get("task", "")
+        if not url or not task_text:
+            continue
+        slug = _match_worksheet_task(task_text)
+        if slug:
+            worksheet_entry = WORKSHEET_TASKS[slug]
+            title = worksheet_entry["name"]
+            category = slug
+            hours = hours_for_worksheet_task(slug)
+            optimization_level = optimization_level_for_worksheet_task(slug)
+        else:
+            # No worksheet match -- still create the task rather than silently
+            # dropping the URL, just with the same conservative defaults the
+            # rest of this codebase falls back to for an unrecognized category
+            # (see task_hours.py's DEFAULT_TASK_HOURS / _schedule_phase_for's
+            # "ongoing_content" fallback).
+            title = task_text.strip()
+            category = "custom"
+            hours = estimated_hours_for(category)
+            optimization_level = None
+            unmatched.append(task_text)
+        task = Task(
+            site_id=site_id,
+            source="chat",
+            category=category,
+            title=f"{title} — {url}",
+            description=f"Planned by the chat agent from a batch URL request: {title} on {url}.",
+            affected_urls=[url],
+            severity=entry.get("severity", "medium"),
+            optimization_level=optimization_level,
+            estimated_hours=hours,
+            status="todo",
+        )
+        db.add(task)
+        created.append(task)
+    db.commit()
+
+    if created:
+        reschedule_all_tasks(db, site_id)
+
+    result = [_serialize(t) for t in created]
+    summary = (
+        f"Planned {len(created)} task(s) from {len(created)} URL(s), scheduled within the site's "
+        f"8-hour/day capacity."
+    )
+    if unmatched:
+        summary += f" {len(unmatched)} didn't match a known check and used a 1-hour default estimate."
+    return result, summary
+
+
 def execute_tool(
     db: Session, site_id: int, tool_name: str, tool_input: dict, campaign_start_date: dt.date | None = None
 ):
@@ -210,4 +337,6 @@ def execute_tool(
         return _update_task(db, site_id, tool_input, campaign_start_date)
     if tool_name == "delete_task":
         return _delete_task(db, site_id, tool_input)
+    if tool_name == "plan_tasks_for_urls":
+        return _plan_tasks_for_urls(db, site_id, tool_input)
     return {"error": f"unknown tool '{tool_name}'"}, None

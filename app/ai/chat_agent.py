@@ -21,6 +21,13 @@ for {domain}. You can see and edit the current task plan via tools (list_tasks, 
 update_task, delete_task). When the analyst asks you to change something, actually call the tools \
 to do it -- don't just describe what you would do.
 
+When the analyst gives you a BATCH of URLs and what each one needs (a crawl export, an audit, their \
+own notes -- more than a couple of URLs at once), use plan_tasks_for_urls instead of calling \
+create_task once per URL. Match each URL's task to the closest known worksheet check by name (e.g. \
+"Redirect chains & loops", "Canonical tag audit", "Robots.txt audit") so it gets a real time \
+estimate -- never invent a target_date yourself for these; the tool schedules the whole batch onto \
+the calendar using the analyst's real 8-hour-day capacity and the site's priority phases.
+
 Current campaign: starts {start_date}, {duration_months} months, {capacity} tasks/week analyst capacity.
 Package: {content_pieces} content pieces/month, {pages_to_optimize} pages to optimize/month.
 

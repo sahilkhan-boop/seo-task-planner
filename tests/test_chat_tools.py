@@ -1,7 +1,7 @@
 import datetime as dt
 
 from app.ai.chat_tools import execute_tool
-from app.models import Site, Task
+from app.models import Campaign, Site, Task
 
 
 def _make_site(db_session, domain="example.com"):
@@ -9,6 +9,15 @@ def _make_site(db_session, domain="example.com"):
     db_session.add(site)
     db_session.commit()
     return site
+
+
+def _make_campaign(db_session, site_id, start_date=dt.date(2026, 9, 1), duration_months=6, capacity_per_week=25):
+    campaign = Campaign(
+        site_id=site_id, start_date=start_date, duration_months=duration_months, capacity_per_week=capacity_per_week,
+    )
+    db_session.add(campaign)
+    db_session.commit()
+    return campaign
 
 
 def test_create_task_persists_and_returns_summary(db_session):
@@ -122,3 +131,101 @@ def test_unknown_tool_returns_error_not_exception(db_session):
     result, summary = execute_tool(db_session, site.id, "not_a_real_tool", {})
     assert "error" in result
     assert summary is None
+
+
+# ---------- plan_tasks_for_urls ----------
+
+
+def test_plan_tasks_for_urls_matches_a_known_worksheet_task_by_exact_name(db_session):
+    site = _make_site(db_session)
+    _make_campaign(db_session, site.id)
+
+    result, summary = execute_tool(
+        db_session, site.id, "plan_tasks_for_urls",
+        {"entries": [{"url": "https://example.com/a", "task": "Robots.txt audit", "severity": "high"}]},
+    )
+
+    assert len(result) == 1
+    assert result[0]["category"] == "robots_txt_audit"
+    assert result[0]["severity"] == "high"
+    assert result[0]["affected_urls"] == ["https://example.com/a"]
+    assert "Planned 1 task(s)" in summary
+    task = db_session.query(Task).filter(Task.site_id == site.id).one()
+    assert task.optimization_level == "key_fix"  # Technical - Crawl & Index's discipline default
+
+
+def test_plan_tasks_for_urls_matches_by_loose_phrasing_too(db_session):
+    """The model won't always echo the worksheet's exact capitalization/punctuation --
+    a case-insensitive match should still land on the same real task."""
+    site = _make_site(db_session)
+    _make_campaign(db_session, site.id)
+
+    result, _ = execute_tool(
+        db_session, site.id, "plan_tasks_for_urls",
+        {"entries": [{"url": "https://example.com/a", "task": "robots.txt audit"}]},
+    )
+
+    assert result[0]["category"] == "robots_txt_audit"
+
+
+def test_plan_tasks_for_urls_falls_back_gracefully_for_unmatched_text(db_session):
+    site = _make_site(db_session)
+    _make_campaign(db_session, site.id)
+
+    result, summary = execute_tool(
+        db_session, site.id, "plan_tasks_for_urls",
+        {"entries": [{"url": "https://example.com/a", "task": "Something totally made up"}]},
+    )
+
+    assert len(result) == 1
+    assert result[0]["category"] == "custom"
+    assert "didn't match a known check" in summary
+    task = db_session.query(Task).filter(Task.site_id == site.id).one()
+    assert task.estimated_hours == 1.0  # DEFAULT_TASK_HOURS
+    assert task.optimization_level is None
+
+
+def test_plan_tasks_for_urls_actually_schedules_onto_the_calendar(db_session):
+    """The whole point: created tasks get a real target_date from the capacity
+    scheduler, not left blank for the analyst to place by hand."""
+    site = _make_site(db_session)
+    _make_campaign(db_session, site.id, start_date=dt.date(2026, 9, 1))
+
+    result, _ = execute_tool(
+        db_session, site.id, "plan_tasks_for_urls",
+        {"entries": [
+            {"url": "https://example.com/a", "task": "Canonical tag audit"},
+            {"url": "https://example.com/b", "task": "Pagination handling"},
+        ]},
+    )
+
+    assert all(t["target_date"] is not None for t in result)
+    assert all(t["month_index"] is not None for t in result)
+
+
+def test_plan_tasks_for_urls_skips_entries_missing_url_or_task(db_session):
+    site = _make_site(db_session)
+    _make_campaign(db_session, site.id)
+
+    result, summary = execute_tool(
+        db_session, site.id, "plan_tasks_for_urls",
+        {"entries": [{"url": "https://example.com/a"}, {"task": "Robots.txt audit"}, {}]},
+    )
+
+    assert result == []
+    assert "Planned 0 task(s)" in summary
+    assert db_session.query(Task).filter(Task.site_id == site.id).count() == 0
+
+
+def test_plan_tasks_for_urls_stays_scoped_to_the_given_site(db_session):
+    site_a = _make_site(db_session, "a.com")
+    site_b = _make_site(db_session, "b.com")
+    _make_campaign(db_session, site_a.id)
+
+    execute_tool(
+        db_session, site_a.id, "plan_tasks_for_urls",
+        {"entries": [{"url": "https://a.com/x", "task": "Robots.txt audit"}]},
+    )
+
+    assert db_session.query(Task).filter(Task.site_id == site_b.id).count() == 0
+    assert db_session.query(Task).filter(Task.site_id == site_a.id).count() == 1
