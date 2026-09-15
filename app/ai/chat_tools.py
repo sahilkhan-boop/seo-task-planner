@@ -101,9 +101,11 @@ TOOLS = [
     {
         "name": "plan_tasks_for_urls",
         "description": (
-            "Given a batch of URLs and which SEO check/fix each one needs, creates one task per "
-            "URL and schedules ALL of them onto the calendar using the site's real analyst capacity "
-            "(an 8-hour workday) and priority phases (benchmarking -> technical audit -> key fixes -> "
+            "Given a batch of URLs and which SEO check/fix each one needs, groups every URL that "
+            "needs the SAME check into one task (worksheet hours are site-wide, one-time totals -- "
+            "e.g. a 'Canonical tag audit' covering 10 URLs is still one task, not 10), then schedules "
+            "every resulting task onto the calendar using the site's real analyst capacity (an "
+            "8-hour workday) and priority phases (benchmarking -> technical audit -> key fixes -> "
             "quick wins -> ongoing content) -- the exact same capacity-aware scheduler every "
             "GSC/GA4/crawl-generated task already goes through. This is how planning actually works: "
             "never pick target_date yourself for a batch like this -- call this tool and let it place "
@@ -256,13 +258,24 @@ def _match_worksheet_task(task_text: str) -> str | None:
     return None
 
 
+_SEVERITY_RANK = {"high": 0, "medium": 1, "low": 2}
+
+
 def _plan_tasks_for_urls(db: Session, site_id: int, tool_input: dict):
-    """Creates one Task per {url, task} entry, then hands the whole batch to the
-    same capacity-aware scheduler every other task source uses (services.
-    reschedule_all_tasks) -- this is the actual "planning": nothing here picks a
-    target_date itself, every new task is created unscheduled and manually_
-    scheduled=False specifically so the 8-hour-day/priority-phase scheduler is
-    the one placing it, same as a real GSC/GA4/crawl sync would.
+    """Creates one Task per DISTINCT check, not one per URL -- worksheet hours are
+    SITE-WIDE, ONE-TIME totals (confirmed with Sahil 2026-09-15; see
+    worksheet_task_hours.py's module docstring), so every URL that needs the
+    same check is grouped into a single task covering all of them, using that
+    check's hours value once -- not multiplied per URL, which would wildly
+    overstate the real effort (10 URLs needing a 45h site-wide audit is still
+    one 45h audit, not 450h).
+
+    The whole batch is then handed to the same capacity-aware scheduler every
+    other task source uses (services.reschedule_all_tasks) -- this is the
+    actual "planning": nothing here picks a target_date itself, every new task
+    is created unscheduled and manually_scheduled=False specifically so the
+    8-hour-day/priority-phase scheduler places it, same as a real GSC/GA4/crawl
+    sync would.
 
     Local import (not top-level) to keep app.services and app.ai decoupled --
     services.py has no reason to import anything from here, and this avoids
@@ -271,39 +284,59 @@ def _plan_tasks_for_urls(db: Session, site_id: int, tool_input: dict):
     from app.services import reschedule_all_tasks
 
     entries = tool_input.get("entries") or []
-    created: list[Task] = []
-    unmatched: list[str] = []
+    groups: dict[str, dict] = {}  # group_key -> {slug, title, urls, severities}
+    unmatched_texts: set[str] = set()
+
     for entry in entries:
         url = entry.get("url")
-        task_text = entry.get("task", "")
+        task_text = (entry.get("task") or "").strip()
         if not url or not task_text:
             continue
         slug = _match_worksheet_task(task_text)
         if slug:
-            worksheet_entry = WORKSHEET_TASKS[slug]
-            title = worksheet_entry["name"]
+            group_key = f"worksheet:{slug}"
+            title = WORKSHEET_TASKS[slug]["name"]
+        else:
+            # No worksheet match -- still plan it rather than silently dropping
+            # the URL, just grouped by its own exact text (distinct free-text
+            # descriptions never merge with each other) and with the same
+            # conservative defaults the rest of this codebase falls back to for
+            # an unrecognized category (task_hours.py's DEFAULT_TASK_HOURS /
+            # _schedule_phase_for's "ongoing_content" fallback).
+            group_key = f"custom:{task_text.lower()}"
+            title = task_text
+            unmatched_texts.add(task_text)
+        group = groups.setdefault(group_key, {"slug": slug, "title": title, "urls": [], "severities": []})
+        if url not in group["urls"]:
+            group["urls"].append(url)
+        group["severities"].append(entry.get("severity", "medium"))
+
+    created: list[Task] = []
+    for group in groups.values():
+        slug = group["slug"]
+        if slug:
             category = slug
             hours = hours_for_worksheet_task(slug)
             optimization_level = optimization_level_for_worksheet_task(slug)
         else:
-            # No worksheet match -- still create the task rather than silently
-            # dropping the URL, just with the same conservative defaults the
-            # rest of this codebase falls back to for an unrecognized category
-            # (see task_hours.py's DEFAULT_TASK_HOURS / _schedule_phase_for's
-            # "ongoing_content" fallback).
-            title = task_text.strip()
             category = "custom"
             hours = estimated_hours_for(category)
             optimization_level = None
-            unmatched.append(task_text)
+        # Worst-case severity across the group -- one URL needing this check
+        # urgently is enough to raise the whole (now-consolidated) task's severity.
+        severity = min(group["severities"], key=lambda s: _SEVERITY_RANK.get(s, 1))
+        url_count = len(group["urls"])
         task = Task(
             site_id=site_id,
             source="chat",
             category=category,
-            title=f"{title} — {url}",
-            description=f"Planned by the chat agent from a batch URL request: {title} on {url}.",
-            affected_urls=[url],
-            severity=entry.get("severity", "medium"),
+            title=f"{group['title']} ({url_count} URL{'s' if url_count != 1 else ''})",
+            description=(
+                f"Planned by the chat agent from a batch URL request: {group['title']} "
+                f"across {url_count} URL(s)."
+            ),
+            affected_urls=group["urls"],
+            severity=severity,
             optimization_level=optimization_level,
             estimated_hours=hours,
             status="todo",
@@ -316,12 +349,16 @@ def _plan_tasks_for_urls(db: Session, site_id: int, tool_input: dict):
         reschedule_all_tasks(db, site_id)
 
     result = [_serialize(t) for t in created]
+    total_urls = sum(len(t.affected_urls) for t in created)
     summary = (
-        f"Planned {len(created)} task(s) from {len(created)} URL(s), scheduled within the site's "
-        f"8-hour/day capacity."
+        f"Planned {len(created)} task(s) covering {total_urls} URL(s), scheduled within the "
+        f"site's 8-hour/day capacity."
     )
-    if unmatched:
-        summary += f" {len(unmatched)} didn't match a known check and used a 1-hour default estimate."
+    if unmatched_texts:
+        summary += (
+            f" {len(unmatched_texts)} check(s) didn't match a known worksheet task and used a "
+            f"1-hour default estimate."
+        )
     return result, summary
 
 

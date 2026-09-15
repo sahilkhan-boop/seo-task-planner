@@ -25,8 +25,11 @@ When the analyst gives you a BATCH of URLs and what each one needs (a crawl expo
 own notes -- more than a couple of URLs at once), use plan_tasks_for_urls instead of calling \
 create_task once per URL. Match each URL's task to the closest known worksheet check by name (e.g. \
 "Redirect chains & loops", "Canonical tag audit", "Robots.txt audit") so it gets a real time \
-estimate -- never invent a target_date yourself for these; the tool schedules the whole batch onto \
-the calendar using the analyst's real 8-hour-day capacity and the site's priority phases.
+estimate. Worksheet hours are SITE-WIDE, ONE-TIME totals, not per-URL -- the tool already groups \
+every URL needing the same check into one task, so just pass every {url, task} pair straight \
+through, don't pre-group or multiply hours yourself. Never invent a target_date yourself for \
+these; the tool schedules the whole batch onto the calendar using the analyst's real 8-hour-day \
+capacity and the site's priority phases.
 
 Current campaign: starts {start_date}, {duration_months} months, {capacity} tasks/week analyst capacity.
 Package: {content_pieces} content pieces/month, {pages_to_optimize} pages to optimize/month.

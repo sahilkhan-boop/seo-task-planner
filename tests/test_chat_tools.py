@@ -179,7 +179,7 @@ def test_plan_tasks_for_urls_falls_back_gracefully_for_unmatched_text(db_session
 
     assert len(result) == 1
     assert result[0]["category"] == "custom"
-    assert "didn't match a known check" in summary
+    assert "didn't match a known worksheet task" in summary
     task = db_session.query(Task).filter(Task.site_id == site.id).one()
     assert task.estimated_hours == 1.0  # DEFAULT_TASK_HOURS
     assert task.optimization_level is None
@@ -201,6 +201,78 @@ def test_plan_tasks_for_urls_actually_schedules_onto_the_calendar(db_session):
 
     assert all(t["target_date"] is not None for t in result)
     assert all(t["month_index"] is not None for t in result)
+
+
+def test_plan_tasks_for_urls_groups_multiple_urls_needing_the_same_check_into_one_task(db_session):
+    """Worksheet hours are site-wide, one-time totals -- 3 URLs needing the same
+    audit is still one task covering all 3, not 3 separate 45-hour tasks."""
+    site = _make_site(db_session)
+    _make_campaign(db_session, site.id)
+
+    result, summary = execute_tool(
+        db_session, site.id, "plan_tasks_for_urls",
+        {"entries": [
+            {"url": "https://example.com/a", "task": "Canonical tag audit"},
+            {"url": "https://example.com/b", "task": "Canonical tag audit"},
+            {"url": "https://example.com/c", "task": "canonical tag audit"},  # loose casing, same check
+        ]},
+    )
+
+    assert len(result) == 1  # one consolidated task, not three
+    assert set(result[0]["affected_urls"]) == {
+        "https://example.com/a", "https://example.com/b", "https://example.com/c",
+    }
+    task = db_session.query(Task).filter(Task.site_id == site.id).one()
+    assert task.estimated_hours == 45.0  # the worksheet's site-wide total, not 45*3
+    assert "Planned 1 task(s) covering 3 URL(s)" in summary
+
+
+def test_plan_tasks_for_urls_keeps_different_checks_as_separate_tasks(db_session):
+    site = _make_site(db_session)
+    _make_campaign(db_session, site.id)
+
+    result, _ = execute_tool(
+        db_session, site.id, "plan_tasks_for_urls",
+        {"entries": [
+            {"url": "https://example.com/a", "task": "Canonical tag audit"},
+            {"url": "https://example.com/a", "task": "Robots.txt audit"},
+        ]},
+    )
+
+    assert len(result) == 2
+    categories = {t["category"] for t in result}
+    assert categories == {"canonical_tag_audit", "robots_txt_audit"}
+
+
+def test_plan_tasks_for_urls_grouped_task_takes_the_worst_severity_in_the_group(db_session):
+    site = _make_site(db_session)
+    _make_campaign(db_session, site.id)
+
+    execute_tool(
+        db_session, site.id, "plan_tasks_for_urls",
+        {"entries": [
+            {"url": "https://example.com/a", "task": "Canonical tag audit", "severity": "low"},
+            {"url": "https://example.com/b", "task": "Canonical tag audit", "severity": "high"},
+        ]},
+    )
+
+    task = db_session.query(Task).filter(Task.site_id == site.id).one()
+    assert task.severity == "high"
+
+
+def test_plan_tasks_for_urls_does_not_double_count_the_same_url_given_twice(db_session):
+    site = _make_site(db_session)
+    _make_campaign(db_session, site.id)
+
+    result, _ = execute_tool(
+        db_session, site.id, "plan_tasks_for_urls",
+        {"entries": [
+            {"url": "https://example.com/a", "task": "Canonical tag audit"},
+            {"url": "https://example.com/a", "task": "Canonical tag audit"},
+        ]},
+    )
+
+    assert result[0]["affected_urls"] == ["https://example.com/a"]
 
 
 def test_plan_tasks_for_urls_skips_entries_missing_url_or_task(db_session):
