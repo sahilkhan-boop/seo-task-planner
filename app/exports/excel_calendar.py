@@ -8,7 +8,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
-from app.scheduling.calendar_grid import WEEKDAY_LABELS, MonthGrid
+from app.scheduling.calendar_grid import WEEKDAY_LABELS, MonthGrid, task_calendar_span
 
 HEADER_FILL = PatternFill("solid", fgColor="2563EB")
 OUT_OF_MONTH_FILL = PatternFill("solid", fgColor="F3F4F6")
@@ -26,7 +26,12 @@ def _day_cell_text(cell, project_name: str) -> str:
     shown = cell.tasks[:MAX_TASKS_PER_CELL]
     for t in shown:
         title = t.title if len(t.title) <= 60 else t.title[:57] + "..."
-        lines.append(f"[{t.severity.upper()}] {title}")
+        # A multi-day worksheet-driven task (see task_calendar_span) shows on
+        # every day it actually spans -- flag days after its start so it doesn't
+        # read as a fresh task starting on each one.
+        span = task_calendar_span(t.target_date, t.estimated_hours)
+        span_note = f" (day {span.index(cell.date) + 1}/{len(span)})" if len(span) > 1 else ""
+        lines.append(f"[{t.severity.upper()}] {title}{span_note}")
         lines.append(f"  {project_name} · {t.assignee or 'Unassigned'}")
     if len(cell.tasks) > MAX_TASKS_PER_CELL:
         lines.append(f"+{len(cell.tasks) - MAX_TASKS_PER_CELL} more")

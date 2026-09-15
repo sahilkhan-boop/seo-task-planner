@@ -14,7 +14,7 @@ from app.exports.excel_calendar import build_calendar_xlsx
 from app.exports.pdf_calendar import build_calendar_pdf
 from app.models import Campaign, Site, Task
 from app.rules.optimization_levels import OPTIMIZATION_LEVELS, OPTIMIZATION_LEVEL_LABELS
-from app.scheduling.calendar_grid import build_campaign_calendar, calendar_span_months
+from app.scheduling.calendar_grid import build_campaign_calendar, calendar_span_months, task_calendar_span
 from app.services import NoCampaignError, regenerate_content_plan
 from app.templating import short_site_label, templates
 
@@ -334,12 +334,18 @@ def _calendar_months_for_tasks(tasks: list) -> list:
     start_date/duration_months (what build_campaign_calendar normally gets fed
     from) -- there's no single campaign here, these tasks span 4 different
     sites each with their own campaign on their own schedule. Empty when nothing
-    has a due date at all, rather than defaulting to an arbitrary single month."""
+    has a due date at all, rather than defaulting to an arbitrary single month.
+
+    `end` is each task's real LAST spanned day (task_calendar_span), not just
+    its target_date -- a multi-day worksheet-driven task starting near the end
+    of the latest month with any work on it could otherwise have its later days
+    fall outside the grid entirely.
+    """
     dated = [t.target_date for t in tasks if t.target_date]
     if not dated:
         return []
     start = min(dated).replace(day=1)
-    end = max(dated)
+    end = max((task_calendar_span(t.target_date, t.estimated_hours) or [t.target_date])[-1] for t in tasks if t.target_date)
     duration_months = (end.year - start.year) * 12 + (end.month - start.month) + 1
     return build_campaign_calendar(start, duration_months, tasks)
 
@@ -581,7 +587,7 @@ def task_calendar(
         # otherwise applying a filter could shrink/grow how many months are shown,
         # which should be a campaign-level fact, not a side effect of the current filter.
         all_tasks = db.scalars(select(Task).where(Task.site_id == site_id)).all()
-        span_months = calendar_span_months(campaign.duration_months, all_tasks)
+        span_months = calendar_span_months(campaign.duration_months, all_tasks, campaign.start_date)
         months = build_campaign_calendar(campaign.start_date, span_months, tasks)
 
     return templates.TemplateResponse(
@@ -886,7 +892,9 @@ def export_calendar_pdf(site_id: int, db: Session = Depends(get_db)):
     campaign = _current_campaign(db, site_id)
     tasks = db.scalars(select(Task).where(Task.site_id == site_id)).all()
     months = (
-        build_campaign_calendar(campaign.start_date, calendar_span_months(campaign.duration_months, tasks), tasks)
+        build_campaign_calendar(
+            campaign.start_date, calendar_span_months(campaign.duration_months, tasks, campaign.start_date), tasks
+        )
         if campaign
         else []
     )
@@ -906,7 +914,9 @@ def export_calendar_xlsx(site_id: int, db: Session = Depends(get_db)):
     campaign = _current_campaign(db, site_id)
     tasks = db.scalars(select(Task).where(Task.site_id == site_id)).all()
     months = (
-        build_campaign_calendar(campaign.start_date, calendar_span_months(campaign.duration_months, tasks), tasks)
+        build_campaign_calendar(
+            campaign.start_date, calendar_span_months(campaign.duration_months, tasks, campaign.start_date), tasks
+        )
         if campaign
         else []
     )

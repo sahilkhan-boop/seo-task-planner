@@ -491,6 +491,15 @@ details summary:hover { color: var(--accent); }
 }
 .cal-task-meta { font-size: 0.6rem; opacity: 0.75; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--muted); }
 .cal-task-more { font-size: 0.65rem; color: var(--muted-2); padding-left: 3px; }
+/* A later day of a multi-day task (see task_calendar_span in calendar_grid.py --
+   a worksheet-driven site-wide audit, 30-60h, spans several real business days)
+   -- solid left border swapped for a dashed one and a touch of transparency, so
+   it reads as "this work is still running here", distinct from a task that's
+   actually starting fresh on this day. */
+.cal-task-continued {
+  opacity: 0.7;
+  border-left-style: dashed;
+}
 
 /* Chat */
 .chat-window { display: flex; flex-direction: column; gap: 14px; min-height: 200px; max-height: 60vh; overflow-y: auto; }

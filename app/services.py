@@ -39,6 +39,7 @@ from app.rules.optimization_levels import STANDING_TASK_CATEGORIES, default_opti
 from app.rules.reporting_rules import generate_reporting_tasks
 from app.rules.task_hours import estimated_hours_for
 from app.rules.volume_rules import evaluate_volume_benchmarks
+from app.scheduling.capacity import DAILY_CAPACITY_HOURS, WEDNESDAY
 from app.scheduling.month_utils import add_months
 from app.scheduling.timeline import assign_schedule
 
@@ -129,10 +130,6 @@ _KEY_FIX_ORDER = [
     "redirect_inlink_update", "ui_ux_review", "low_mobile_share", "low_key_events",
 ]
 _QUICK_WIN_ORDER = ["meta_tag_reoptimization", "high_exit_rate", "ctr_optimization", "anchor_optimization"]
-WEDNESDAY = 2
-# An 8-hour workday's total capacity -- see reschedule_all_tasks. Real, analyst-
-# supplied (Sahil, 2026-08-27), not a guess.
-DAILY_CAPACITY_HOURS = 8.0
 
 
 def _schedule_phase_for(task: Task) -> str:

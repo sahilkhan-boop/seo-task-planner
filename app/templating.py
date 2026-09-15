@@ -5,6 +5,7 @@ import calendar
 from fastapi.templating import Jinja2Templates
 
 from app.paths import TEMPLATES_DIR
+from app.scheduling.calendar_grid import task_calendar_span
 
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
@@ -26,3 +27,4 @@ def short_site_label(domain: str) -> str:
 templates.env.filters["month_label"] = month_label
 templates.env.filters["short_site_label"] = short_site_label
 templates.env.globals["calendar"] = calendar
+templates.env.globals["task_calendar_span"] = task_calendar_span

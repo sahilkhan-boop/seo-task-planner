@@ -58,10 +58,15 @@
                   {% set opt_class = "opt-" ~ t.optimization_level if t.optimization_level else "severity-" ~ t.severity %}
                   {% set opt_label = optimization_level_labels[t.optimization_level] if t.optimization_level else (t.severity ~ " severity") %}
                   {% set mechanism = populated_by.get(t.category) %}
-                  <div class="cal-task {{ opt_class }}"
-                       title="{{ t.title }} — {{ opt_label }}{{ ' (' ~ mechanism ~ ')' if mechanism else '' }}{{ ' · ' ~ t.assignee if t.assignee else '' }}">
-                    <div class="cal-task-title">{{ t.title }}</div>
-                    <div class="cal-task-meta">{{ opt_label }} · {{ t.assignee or "Unassigned" }}</div>
+                  {% set span = task_calendar_span(t.target_date, t.estimated_hours) %}
+                  {% set is_continuation = t.target_date != cell.date %}
+                  <div class="cal-task {{ opt_class }} {{ 'cal-task-continued' if is_continuation else '' }}"
+                       title="{{ t.title }} — {{ opt_label }}{{ ' (' ~ mechanism ~ ')' if mechanism else '' }}{{ ' · ' ~ t.assignee if t.assignee else '' }}{{ ' — day ' ~ (span.index(cell.date) + 1) ~ ' of ' ~ span|length if span|length > 1 else '' }}">
+                    <div class="cal-task-title">{{ ('↳ ' if is_continuation else '') ~ t.title }}</div>
+                    <div class="cal-task-meta">
+                      {{ opt_label }} · {{ t.assignee or "Unassigned" }}
+                      {% if span|length > 1 %} · day {{ span.index(cell.date) + 1 }}/{{ span|length }}{% endif %}
+                    </div>
                   </div>
                 {% endfor %}
                 {% if cell.tasks|length > 3 %}

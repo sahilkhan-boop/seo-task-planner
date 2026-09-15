@@ -12,7 +12,7 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import inch
 from reportlab.platypus import KeepTogether, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
-from app.scheduling.calendar_grid import WEEKDAY_LABELS, MonthGrid
+from app.scheduling.calendar_grid import WEEKDAY_LABELS, MonthGrid, task_calendar_span
 
 SEVERITY_COLOR = {"high": "#dc2626", "medium": "#d97706", "low": "#059669"}
 MAX_TASKS_PER_CELL = 3
@@ -35,8 +35,19 @@ def _day_cell_paragraph(cell, project_name: str, style: ParagraphStyle) -> Parag
         if len(title) > 30:
             title = title[:27] + "..."
         assignee = _escape(t.assignee or "Unassigned")
+        # A multi-day worksheet-driven task (see task_calendar_span) shows on every
+        # day it actually spans -- mark days after its start with a bullet + "day
+        # N/M" instead of the normal marker, so it doesn't read as a fresh task
+        # starting on each of those days.
+        span = task_calendar_span(t.target_date, t.estimated_hours)
+        if len(span) > 1:
+            day_num = span.index(cell.date) + 1
+            marker = "&#8618;" if cell.date != t.target_date else "&#8226;"
+            span_note = f" (day {day_num}/{len(span)})"
+        else:
+            marker, span_note = "&#8226;", ""
         lines.append(
-            f'<font color="{color}" size="6.5">&#8226; {title}</font><br/>'
+            f'<font color="{color}" size="6.5">{marker} {title}{span_note}</font><br/>'
             f'<font size="6" color="#6b7280">{_escape(project_name)} &middot; {assignee}</font>'
         )
     if len(cell.tasks) > MAX_TASKS_PER_CELL:
