@@ -179,7 +179,21 @@ def _assign_next_available_slot(
     the index it landed on (or len(days) if the campaign window ran out first, in which
     case target_date/month_index are left None -- next cycle's backlog, same as before
     this was hour-based), so a caller walking several tasks in a fixed order can resume
-    searching forward from there instead of re-scanning from day 0 for every task."""
+    searching forward from there instead of re-scanning from day 0 for every task.
+
+    task.target_date is always its START day -- but a task bigger than one day's
+    budget (the worksheet-driven site-wide audits from plan_tasks_for_urls are
+    30-60h; nothing from the original rule engines ever was, so this is a no-op for
+    every task this scheduler handled before that tool existed) spans consecutive
+    days from there, each day's own remaining headroom consumed in turn until the
+    task's full estimated_hours is accounted for. Without this, a 45h task would
+    silently claim only its start day in `day_hours` while actually representing
+    ~6 business days of real work -- the next task in the queue would then land on
+    day 2 of that same span, stacking on top of work that (in reality) is still
+    running, even though day_hours itself never technically exceeds budget on any
+    OTHER day. Reserving the whole span here is what makes "never over 8h/day"
+    true of the actual schedule, not just of each day's own ledger entry.
+    """
     idx = start_idx
     while idx < len(days) and day_hours.get(days[idx], 0.0) > 0.0 and day_hours[days[idx]] + task.estimated_hours > DAILY_CAPACITY_HOURS:
         idx += 1
@@ -190,7 +204,19 @@ def _assign_next_available_slot(
     d = days[idx]
     task.target_date = d
     task.month_index = _month_index_for(anchor, d)
-    day_hours[d] = day_hours.get(d, 0.0) + task.estimated_hours
+
+    remaining = task.estimated_hours
+    day_cursor = idx
+    while remaining > 0 and day_cursor < len(days):
+        headroom = DAILY_CAPACITY_HOURS - day_hours.get(days[day_cursor], 0.0)
+        if headroom <= 0:
+            day_cursor += 1
+            continue
+        consumed = min(headroom, remaining)
+        day_hours[days[day_cursor]] = day_hours.get(days[day_cursor], 0.0) + consumed
+        remaining -= consumed
+        if remaining > 0:
+            day_cursor += 1
     return idx
 
 
